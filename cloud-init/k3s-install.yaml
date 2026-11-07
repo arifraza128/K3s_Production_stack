@@ -1,0 +1,29 @@
+#cloud-config
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - curl
+  - git
+  - jq
+
+write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    owner: root:root
+    permissions: '0644'
+    content: |
+      write-kubeconfig-mode: "0644"
+
+runcmd:
+  # Install K3s using official script
+  - curl -sfL https://get.k3s.io | sh -
+  # Ensure k3s.yaml is created before attempting to copy
+  - until [ -f /etc/rancher/k3s/k3s.yaml ]; do sleep 2; done
+  # Set up kubeconfig for default ubuntu user
+  - mkdir -p /home/ubuntu/.kube
+  - cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
+  - chown -R ubuntu:ubuntu /home/ubuntu/.kube
+  - chmod 600 /home/ubuntu/.kube/config
+  # Create completion ready log file
+  - echo "K3s installation completed successfully at $(date -u)" > /var/log/k3s-ready.log
