@@ -15,6 +15,14 @@ write_files:
     content: |
       write-kubeconfig-mode: "0644"
 
+  # NEW: TLS SAN drop-in — public EIP ko cert mein add karta hai
+  - path: /etc/rancher/k3s/config.yaml.d/tls-san.yaml
+    owner: root:root
+    permissions: '0644'
+    content: |
+      tls-san+:
+        - "13.207.161.55"
+
 runcmd:
   # Install K3s using official script
   - curl -sfL https://get.k3s.io | sh -
