@@ -29,3 +29,4 @@ echo "  - Username: admin"
 ARGO_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "Secret not found or password changed")
 echo "  - Password: ${ARGO_PWD}"
 echo "=============================================================================="
+

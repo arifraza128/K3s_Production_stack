@@ -13,3 +13,4 @@ configMapGenerator:
     literals:
       # Enable insecure mode for argocd-server behind Traefik reverse proxy
       - server.insecure=true
+
