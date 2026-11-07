@@ -1,0 +1,29 @@
+# Gitea chart enables postgresql-ha by default — disable it
+# and use the simpler non-HA postgresql subchart instead.
+postgresql-ha:
+  enabled: false
+
+postgresql:
+  enabled: true
+  global:
+    postgresql:
+      auth:
+        password: gitea-db-pass
+
+gitea:
+  admin:
+    username: gitea_admin
+    password: admin12345
+    email: admin@local
+
+persistence:
+  enabled: true
+  size: 5Gi
+
+service:
+  http:
+    type: NodePort
+    nodePort: 30080
+  ssh:
+    type: NodePort
+    nodePort: 30022
