@@ -1,4 +1,6 @@
 FROM python:3.12-alpine3.21
+LABEL org.opencontainers.image.source="https://github.com/arifraza128/K3s_Production_stack"
+LABEL org.opencontainers.image.description="Phoenix Platform Test API (hardened, non-root, read-only rootfs)"
 
 # Upgrade all Alpine OS packages and remove unused package managers (pip/setuptools/wheel)
 # to eliminate OS & Python packaging CVEs flagged by Trivy HIGH/CRITICAL gate

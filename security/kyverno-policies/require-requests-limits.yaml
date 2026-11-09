@@ -3,6 +3,7 @@ kind: ClusterPolicy
 metadata:
   name: require-pod-requests-and-limits
   annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     policies.kyverno.io/title: Require CPU and Memory Requests and Limits
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
@@ -30,4 +31,3 @@ spec:
                   limits:
                     memory: "?*"
                     cpu: "?*"
-

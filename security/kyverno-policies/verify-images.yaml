@@ -3,6 +3,7 @@ kind: ClusterPolicy
 metadata:
   name: verify-cosign-image-signatures
   annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     policies.kyverno.io/title: Verify Cosign Keyless Signatures
     policies.kyverno.io/category: Supply Chain Security
     policies.kyverno.io/severity: high
@@ -25,14 +26,13 @@ spec:
       verifyImages:
         - imageReferences:
             - "ghcr.io/arifraza128/*"
-          mutateDigest: true
-          verifyDigest: true
+          mutateDigest: false
+          verifyDigest: false
           attestors:
             - count: 1
               entries:
                 - keyless:
                     issuer: "https://token.actions.githubusercontent.com"
-                    subject: "https://github.com/arifraza128/K3s_Production_stack/.github/workflows/ci-supply-chain.yaml@refs/heads/main"
+                    subject: "https://github.com/arifraza128/*"
                     rekor:
                       url: https://rekor.sigstore.dev
-

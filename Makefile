@@ -5,7 +5,7 @@
 SHELL := /bin/bash
 TF_DIR := terraform
 
-.PHONY: help init validate plan apply destroy bootstrap-gitops lint chaos dr-drill backup-keys
+.PHONY: help init validate plan apply destroy bootstrap-gitops lint chaos dr-drill backup-keys test-api phase4-verify
 
 help: ## Show available Make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -31,6 +31,12 @@ bootstrap-gitops: ## Bootstrap ArgoCD and deploy Root Application (App-of-Apps)
 
 backup-keys: ## Backup Sealed Secrets master encryption key from kube-system
 	bash security/sealed-secrets/backup-sealed-secrets-key.sh
+
+test-api: ## Run Phase 4 Test API unit tests
+	python3 -m unittest discover -s apps/test-api -v
+
+phase4-verify: ## Run Phase 4 end-to-end verification (unit tests + Kyverno + Sealed Secrets + Test API)
+	bash scripts/verify-phase4.sh
 
 chaos: ## Run Phase 7 reliability chaos experiments (5 experiments)
 	bash chaos/scripts/chaos.sh

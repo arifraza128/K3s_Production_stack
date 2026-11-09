@@ -3,6 +3,7 @@ kind: ClusterPolicy
 metadata:
   name: disallow-privileged-and-host-namespaces
   annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     policies.kyverno.io/title: Disallow Privileged Containers and Host Namespaces
     policies.kyverno.io/category: Pod Security Standards (Baseline/Restricted)
     policies.kyverno.io/severity: high
@@ -41,4 +42,3 @@ spec:
             =(hostPID): "false"
             =(hostIPC): "false"
             =(hostNetwork): "false"
-
