@@ -1,0 +1,38 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-cosign-image-signatures
+  annotations:
+    policies.kyverno.io/title: Verify Cosign Keyless Signatures
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Verifies that all application images from ghcr.io/arifraza128/* are signed
+      keyless via Sigstore Cosign by the repository's GitHub Actions workflow.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-ghcr-keyless-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - default
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/arifraza128/*"
+          mutateDigest: true
+          verifyDigest: true
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    issuer: "https://token.actions.githubusercontent.com"
+                    subject: "https://github.com/arifraza128/K3s_Production_stack/.github/workflows/ci-supply-chain.yaml@refs/heads/main"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+

@@ -1,0 +1,66 @@
+# kube-prometheus-stack Helm values optimized for K3s ARM64 single-node
+grafana:
+  enabled: true
+  adminPassword: "admin-phoenix-stack"
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        cpu: 500m
+        memory: 768Mi
+
+alertmanager:
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ["alertname", "namespace", "service"]
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 2h
+      receiver: "discord-notifications"
+      routes:
+        - matchers:
+            - alertname =~ "Watchdog|DeadMansSwitchHeartbeat"
+          receiver: "healthchecks-heartbeat"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1m
+        - matchers:
+            - severity =~ "critical|warning"
+          receiver: "discord-notifications"
+    receivers:
+      - name: "discord-notifications"
+        discord_configs:
+          - webhook_url: "https://discord.com/api/webhooks/REPLACE_WITH_DISCORD_WEBHOOK"
+            send_resolved: true
+            title: '[{{ .Status | toUpper }}] Phoenix K3s Alert: {{ .CommonLabels.alertname }}'
+            message: '{{ range .Alerts }}*Summary:* {{ .Annotations.summary }}\n*Description:* {{ .Annotations.description }}\n{{ end }}'
+      - name: "healthchecks-heartbeat"
+        webhook_configs:
+          - url: "https://hc-ping.com/REPLACE_WITH_HEALTHCHECKS_UUID"
+            send_resolved: false
+

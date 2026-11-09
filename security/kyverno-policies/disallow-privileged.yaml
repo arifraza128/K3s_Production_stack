@@ -1,0 +1,44 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-and-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers and Host Namespaces
+    policies.kyverno.io/category: Pod Security Standards (Baseline/Restricted)
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: deny-privileged-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - default
+      validate:
+        message: "Privileged mode and privilege escalation are disallowed."
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"
+                  =(allowPrivilegeEscalation): "false"
+    - name: deny-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - default
+      validate:
+        message: "Sharing host namespaces (hostNetwork, hostPID, hostIPC) is disallowed."
+        pattern:
+          spec:
+            =(hostPID): "false"
+            =(hostIPC): "false"
+            =(hostNetwork): "false"
+

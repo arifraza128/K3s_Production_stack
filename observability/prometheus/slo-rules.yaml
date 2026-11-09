@@ -1,0 +1,63 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: phoenix-platform-slos
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: phoenix.slo.recording
+      interval: 15s
+      rules:
+        # SLO 1: Availability ratio (non-5xx / total requests over 5m)
+        - record: test_api:availability:ratio_rate5m
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{service="test-api",status=~"5.."}[5m]))
+              /
+              clamp_min(sum(rate(http_requests_total{service="test-api"}[5m])), 0.0001)
+            )
+        # SLO 2: P99 Latency in seconds over 5m
+        - record: test_api:latency_p99:seconds_rate5m
+          expr: |
+            histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service="test-api"}[5m])) by (le))
+
+    - name: phoenix.slo.alerts
+      rules:
+        # Alert 1: Triggered when /fail produces 5xx errors breaching the 99.5% Availability SLO
+        - alert: TestApiHigh5xxErrorRate
+          expr: |
+            sum(increase(http_requests_total{service="test-api",status=~"5.."}[2m])) > 0
+            or test_api:availability:ratio_rate5m < 0.995
+          for: 15s
+          labels:
+            severity: critical
+            service: test-api
+            slo: availability
+          annotations:
+            summary: "test-api 5xx SLO Burn Detected"
+            description: "test-api availability dropped below 99.5% (or synthetic /fail 500 error triggered)."
+
+        # Alert 2: Triggered when P99 latency exceeds 300ms
+        - alert: TestApiHighLatencyP99
+          expr: test_api:latency_p99:seconds_rate5m > 0.300
+          for: 1m
+          labels:
+            severity: warning
+            service: test-api
+            slo: latency
+          annotations:
+            summary: "test-api P99 Latency > 300ms"
+            description: "test-api P99 request latency is {{ $value }}s (threshold: 0.300s)."
+
+        # SLO 3: Always-firing DeadManSwitch heartbeat routed to Healthchecks.io
+        - alert: DeadMansSwitchHeartbeat
+          expr: vector(1)
+          labels:
+            severity: none
+            slo: heartbeat
+          annotations:
+            summary: "Phoenix Platform Monitoring Heartbeat"
+            description: "Continuous heartbeat signal to external Healthchecks.io monitor."
+

@@ -22,6 +22,7 @@ Thumbs.db
 # Local state & credentials
 .env
 .env.*
+!.env.example
 .ip.txt
 *.pem
 *.key

@@ -1,0 +1,34 @@
+# Velero Helm values for AWS S3 (ap-south-1)
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.10.0
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: k3s-production-stack-backups-ap-south-1
+      config:
+        region: ap-south-1
+  volumeSnapshotLocation:
+    - name: default
+      provider: aws
+      config:
+        region: ap-south-1
+
+schedules:
+  daily-cluster-backup:
+    disabled: false
+    schedule: "0 2 * * *"
+    useOwnerReferencesInBackup: false
+    template:
+      ttl: "168h0m0s"
+      includedNamespaces:
+        - gitea
+        - default
+        - security
+

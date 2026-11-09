@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gitea-postgres-s3-backup
+  namespace: gitea
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+          containers:
+            - name: pg-dump-s3
+              image: postgres:16-alpine
+              env:
+                - name: PGHOST
+                  value: "gitea-postgresql.gitea.svc.cluster.local"
+                - name: PGUSER
+                  value: "postgres"
+                - name: PGPASSWORD
+                  value: "gitea-db-pass"
+                - name: PGDATABASE
+                  value: "gitea"
+                - name: S3_BUCKET
+                  value: "k3s-production-stack-backups-ap-south-1"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  TS=$(date -u +"%Y%m%dT%H%M%SZ")
+                  DUMP_FILE="/tmp/gitea-db-${TS}.sql.gz"
+                  echo "==> Running pg_dump against ${PGHOST}..."
+                  pg_dump -h "${PGHOST}" -U "${PGUSER}" -d "${PGDATABASE}" | gzip -9 > "${DUMP_FILE}"
+                  ls -lh "${DUMP_FILE}"
+                  echo "==> Backup completed: ${DUMP_FILE}"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+
