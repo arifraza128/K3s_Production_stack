@@ -1,8 +1,20 @@
-# Chaos Experiment 3: Network Partition (`NetworkPolicy` Isolation)
+---
+experiment: "03-network-partition"
+hypothesis: "Applying a deny-all NetworkPolicy isolates test-api traffic immediately; deleting the policy restores connectivity in < 60s."
+injected_at: "not yet measured"
+recovered_at: "not yet measured"
+recovery_seconds: "not yet measured"
+result: "not yet measured"
+dashboard_screenshot: "not yet measured"
+---
 
-- **Hypothesis:** Applying a deny-all `NetworkPolicy` targeting `app: test-api` immediately drops ingress/egress packets; deleting the partition policy restores service reachability in `< 10s`.
-- **Baseline:** `GET /api/info` returns `200 OK` (`11ms`).
-- **Fault Injection:** `kubectl apply -f chaos-isolate-test-api.yaml` (5s hold) followed by `kubectl delete netpol chaos-isolate-test-api`.
-- **Measured `recovery_seconds`:** `6s`
-- **Result:** **PASS** — CNI enforced packet drop immediately and restored routing within `1s` after policy removal (`6s` total window).
+# Chaos Experiment 03: Network Partition (`NetworkPolicy` Isolation)
 
+- **Hypothesis:** Applying a deny-all `NetworkPolicy` targeting `app: test-api` drops traffic immediately; removing the policy restores reachability in `< 60 s`.
+- **Steady State:** `GET /work` returns `200 OK`.
+- **Injection Method:** `kubectl apply/delete networkpolicy chaos-isolate-test-api -n default`
+- **Observation:** `not yet measured`
+- **Recovery Seconds:** `not yet measured`
+- **Result:** `not yet measured`
+- **Dashboard Screenshot:** `not yet measured`
+- **Follow-ups:** Run `make chaos` against active K3s cluster to record live timestamps.

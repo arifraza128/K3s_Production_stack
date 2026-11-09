@@ -8,10 +8,10 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/limit-rps: "10"
     nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
-    # Phase 6 Security Gate: Explicitly block /crash from external callers
+    # API.md §1 & ARCHITECTURE.md §11: /slow, /fail, /crash are internal only and blocked publicly
     nginx.ingress.kubernetes.io/server-snippet: |
-      location = /crash {
-        return 403 '{"error":"forbidden","message":"/crash endpoint is blocked publicly"}\n';
+      location ~ ^/(crash|fail|slow|metrics) {
+        return 403 '{"error":{"code":"FORBIDDEN","message":"Internal endpoint not routable via public ingress","request_id":"ingress-deny"}}\n';
       }
 spec:
   ingressClassName: nginx
@@ -23,13 +23,6 @@ spec:
     - host: 13.207.161.55.sslip.io
       http:
         paths:
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: test-api
-                port:
-                  number: 80
           - path: /healthz
             pathType: Exact
             backend:
@@ -37,11 +30,17 @@ spec:
                 name: test-api
                 port:
                   number: 80
-          - path: /fail
+          - path: /version
             pathType: Exact
             backend:
               service:
                 name: test-api
                 port:
                   number: 80
-
+          - path: /work
+            pathType: Exact
+            backend:
+              service:
+                name: test-api
+                port:
+                  number: 80

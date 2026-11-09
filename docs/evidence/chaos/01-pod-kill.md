@@ -1,8 +1,20 @@
-# Chaos Experiment 1: Pod Kill (`test-api`)
+---
+experiment: "01-pod-kill"
+hypothesis: "With 2 replicas of test-api, force-deleting 1 pod maintains service availability and Kubernetes recovers the replacement pod in < 60s."
+injected_at: "not yet measured"
+recovered_at: "not yet measured"
+recovery_seconds: "not yet measured"
+result: "not yet measured"
+dashboard_screenshot: "not yet measured"
+---
 
-- **Hypothesis:** With `replicas: 2`, force-deleting one `test-api` pod maintains continuous HTTP 200 responses via the remaining replica while the ReplicaSet controller schedules a replacement in `< 15s`.
-- **Baseline:** 2/2 pods `Running` (`Ready`), Availability SLO = `100%`, P99 Latency = `12ms`.
-- **Fault Injection:** `kubectl delete pod -n default -l app=test-api --grace-period=0 --force`
-- **Measured `recovery_seconds`:** `9s`
-- **Result:** **PASS** — Zero dropped requests; replacement pod reached `Ready` in `9s`.
+# Chaos Experiment 01: Pod Kill (`test-api`)
 
+- **Hypothesis:** With `replicas: 2`, force-deleting one `test-api` pod maintains continuous HTTP 200 responses on `/work` while the ReplicaSet controller schedules a replacement in `< 60 s`.
+- **Steady State:** 2/2 `test-api` pods `Ready`; `/work` returning HTTP `200`.
+- **Injection Method:** `kubectl delete pod -n default -l app=test-api --grace-period=0 --force`
+- **Observation:** `not yet measured` (populated automatically when `bash chaos/scripts/chaos.sh` runs on cluster)
+- **Recovery Seconds:** `not yet measured`
+- **Result:** `not yet measured`
+- **Dashboard Screenshot:** `not yet measured`
+- **Follow-ups:** Run `make chaos` against active K3s cluster to record live timestamps.

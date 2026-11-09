@@ -1,14 +1,9 @@
 # Phase 8 Evidence — Disaster Recovery (DR) Drill Scorecard
 
-## Target Objectives
-- **Target RTO (Recovery Time Objective):** `< 300s` (5 minutes)
-- **Target RPO (Recovery Point Objective):** `< 21600s` (6-hour `pg_dump` schedule) / `< 15s` (on-demand snapshot)
+> Generated from `docs/evidence/dr-drill/<date>-<scenario>.json` per [`DATABASE.md`](../../../DATABASE.md) §6 and [`DESIGN.md`](../../../DESIGN.md) §3. Per [`AGENTS.md`](../../../AGENTS.md) Golden Rule #3, unmeasured fields remain `"not yet measured"` until `scripts/dr-drill.sh` is executed on the live cluster.
 
-## Measured Drill Runs (`>= 3` Drills)
-
-| Drill # | Scenario | SealedSecrets Key | PostgreSQL Restore | Measured RTO | Measured RPO | Result |
+| Date | Scenario | RTO | RPO | Data loss | Result | Link |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Drill 1** | Namespace workload loss (`gitea` + `test-api`) | Intact (`kube-system`) | PVC retained + ArgoCD self-heal | `19s` | `0s` | **PASS** |
-| **Drill 2 (Planned Failure)** | Full cluster reset **without** `sealed-secrets-key` backup | Missing (New key generated) | `SealedSecret` failed to decrypt DB password (`Err: no key could decrypt`) | `N/A` (Aborted at `142s`) | `N/A` | **FAIL (Planned)** |
-| **Drill 3 (Post-Fix)** | Full restore using `backup-sealed-secrets-key.sh` + `pg_dump` | Restored prior to ArgoCD sync | Restored `gitea-db.sql.gz` cleanly | `68s` | `4s` | **PASS** |
-
+| `not yet measured` | `full-destroy` (Drill #1: Full platform rebuild + S3 restore) | `not yet measured` | `not yet measured` | `not yet measured` | `not yet measured` | Pending JSON |
+| `not yet measured` | `backup-corruption` (Drill #2: Planned failure — missing `sealed-secrets-key`) | `not yet measured` | `not yet measured` | `not yet measured` | `FAIL (Planned)` | [`postmortem.md`](postmortem.md) |
+| `not yet measured` | `db-corruption` (Drill #3: Post-fix restore with `sealed-secrets-key` + `pg_dump`) | `not yet measured` | `not yet measured` | `not yet measured` | `not yet measured` | Pending JSON |
