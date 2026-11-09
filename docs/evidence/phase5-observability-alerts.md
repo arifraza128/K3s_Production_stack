@@ -22,3 +22,4 @@
 - **SLO Recording Rules Output:** `"not yet measured"`
 - **Test 1 (`/fail` -> `TestApiHigh5xxErrorRate` Firing Output):** `"not yet measured"`
 - **Test 2 (Heartbeat Suspension Test Output):** `"not yet measured"`
+

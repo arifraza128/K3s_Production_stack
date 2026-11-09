@@ -219,3 +219,4 @@ echo " To open the 4-Row Grafana Dashboard in your browser, run:"
 echo "   kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80"
 echo "   URL: http://localhost:3000  (User: admin / Pass: admin-phoenix-stack)"
 echo "=============================================================================="
+
