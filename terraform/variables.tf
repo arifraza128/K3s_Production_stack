@@ -7,7 +7,7 @@ variable "region" {
 variable "instance_type" {
   description = "EC2 instance type for the K3s node (ARM64 architecture)"
   type        = string
-  default     = "t4g.small"
+  default     = "t4g.medium"
 }
 
 variable "key_name" {
