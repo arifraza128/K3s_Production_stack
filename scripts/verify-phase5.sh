@@ -22,12 +22,31 @@ echo "==========================================================================
 echo " Phoenix Platform — Phase 5 Observability & SLO Verification (${TIMESTAMP})"
 echo "=============================================================================="
 
+# Validate that placeholder strings were not accidentally exported
+if [[ "${DISCORD_WEBHOOK_URL:-}" == *"YOUR_ID"* ]]; then
+  echo "ERROR: DISCORD_WEBHOOK_URL contains placeholder 'YOUR_ID'. Please export your real Discord webhook URL." >&2
+  exit 1
+fi
+if [[ "${HEALTHCHECKS_URL:-}" == *"YOUR_UUID"* ]]; then
+  echo "ERROR: HEALTHCHECKS_URL contains placeholder 'YOUR_UUID'. Please export your real Healthchecks.io URL." >&2
+  exit 1
+fi
+
 # ------------------------------------------------------------------------------
 # Step 1: Check K3s Cluster Connectivity & Install/Verify kube-prometheus-stack
 # ------------------------------------------------------------------------------
 echo ""
 echo "[Step 1/7] Checking K3s cluster and kube-prometheus-stack in namespace 'monitoring'..."
 kubectl cluster-info
+
+HELM_VALUES_FILE="$(mktemp)"
+cp "${REPO_ROOT}/observability/prometheus/values.yaml" "${HELM_VALUES_FILE}"
+if [[ -n "${DISCORD_WEBHOOK_URL:-}" ]]; then
+  sed -i "s|https://discord.com/api/webhooks/REPLACE_WITH_DISCORD_WEBHOOK|${DISCORD_WEBHOOK_URL}|g" "${HELM_VALUES_FILE}"
+fi
+if [[ -n "${HEALTHCHECKS_URL:-}" ]]; then
+  sed -i "s|https://hc-ping.com/REPLACE_WITH_HEALTHCHECKS_UUID|${HEALTHCHECKS_URL}|g" "${HELM_VALUES_FILE}"
+fi
 
 if ! kubectl get statefulset -n monitoring prometheus-kube-prometheus-stack-prometheus >/dev/null 2>&1; then
   echo "  -> Installing kube-prometheus-stack v65.1.1 via Helm..."
@@ -36,9 +55,18 @@ if ! kubectl get statefulset -n monitoring prometheus-kube-prometheus-stack-prom
   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
     --namespace monitoring --create-namespace \
     --version 65.1.1 \
-    -f "${REPO_ROOT}/observability/prometheus/values.yaml" \
+    -f "${HELM_VALUES_FILE}" \
     --wait --timeout 420s
+elif [[ -n "${DISCORD_WEBHOOK_URL:-}" || -n "${HEALTHCHECKS_URL:-}" ]]; then
+  echo "  -> Updating kube-prometheus-stack Alertmanager receivers with exported webhooks..."
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1 || true
+  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+    --namespace monitoring \
+    --version 65.1.1 \
+    -f "${HELM_VALUES_FILE}" \
+    --wait --timeout 300s
 fi
+rm -f "${HELM_VALUES_FILE}"
 
 echo "  -> Waiting for Prometheus, Grafana, and Alertmanager pods to be Ready..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s
@@ -52,7 +80,7 @@ echo ""
 echo "[Step 2/7] Applying Phase 5 observability manifests (ServiceMonitor, SLO Rules, 4-Row Dashboard, Heartbeat, NetworkPolicy)..."
 kubectl apply -k "${REPO_ROOT}/observability" --server-side --force-conflicts
 
-# Optional: Wire DISCORD_WEBHOOK_URL / HEALTHCHECKS_URL into monitoring-webhooks Secret (never logged)
+# Wire DISCORD_WEBHOOK_URL / HEALTHCHECKS_URL into monitoring-webhooks Secret (never logged)
 if [[ -n "${DISCORD_WEBHOOK_URL:-}" || -n "${HEALTHCHECKS_URL:-}" ]]; then
   echo "  -> Updating Secret monitoring/monitoring-webhooks from environment variables (redacted)..."
   kubectl create secret generic monitoring-webhooks -n monitoring \
@@ -114,7 +142,6 @@ if [[ -z "${FIRING_ALERT_JSON}" ]]; then
   FIRING_ALERT_JSON="$(curl -sf "http://127.0.0.1:19090/api/v1/alerts")"
 fi
 
-# If DISCORD_WEBHOOK_URL is exported in shell, also send the formatted DESIGN.md §6 alert payload directly to verify Discord webhook delivery
 DISCORD_DELIVERY_STATUS="DISCORD_WEBHOOK_URL not set in shell (in-cluster Prometheus alert verified)"
 if [[ -n "${DISCORD_WEBHOOK_URL:-}" ]]; then
   echo "  -> Sending formatted [SEV-1] alert notification to Discord webhook..."
@@ -131,6 +158,11 @@ fi
 # ------------------------------------------------------------------------------
 echo ""
 echo "[Step 5/7] Test 2: Verifying DeadMansSwitchHeartbeat & testing heartbeat suspension..."
+if [[ -n "${HEALTHCHECKS_URL:-}" ]]; then
+  echo "  -> Sending live heartbeat ping to Healthchecks.io before suspension..."
+  curl -fsS -m 10 --retry 2 "${HEALTHCHECKS_URL}" >/dev/null && echo "  [PASS] Initial Healthchecks.io ping succeeded!"
+fi
+
 kubectl patch cronjob healthchecks-heartbeat -n monitoring -p '{"spec":{"suspend":true}}'
 SUSPENDED_STATE="$(kubectl get cronjob healthchecks-heartbeat -n monitoring -o wide)"
 echo "  -> Suspended heartbeat CronJob to simulate missing-ping outage:"
@@ -219,4 +251,3 @@ echo " To open the 4-Row Grafana Dashboard in your browser, run:"
 echo "   kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80"
 echo "   URL: http://localhost:3000  (User: admin / Pass: admin-phoenix-stack)"
 echo "=============================================================================="
-
