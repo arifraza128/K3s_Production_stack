@@ -34,3 +34,4 @@ Verify that the GitHub Actions CI supply-chain pipeline (`.github/workflows/ci-s
   - Step 7 (`Generate CycloneDX SBOM with Syft`): **`success`**
   - Step 9 (`Build and Push Multi-Arch Image`): **`success`**
   - Step 11 (`Sign container image keyless with Cosign (OIDC)`): **`success`**
+

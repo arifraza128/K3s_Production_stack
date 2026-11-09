@@ -1,4 +1,13 @@
-# kube-prometheus-stack Helm values optimized for K3s ARM64 single-node
+# kube-prometheus-stack Helm values optimized for K3s ARM64 single-node (t4g.medium 4 GB)
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
 grafana:
   enabled: true
   adminPassword: "admin-phoenix-stack"
@@ -33,6 +42,14 @@ prometheus:
 
 alertmanager:
   enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
   config:
     global:
       resolve_timeout: 5m
@@ -57,10 +74,9 @@ alertmanager:
         discord_configs:
           - webhook_url: "https://discord.com/api/webhooks/REPLACE_WITH_DISCORD_WEBHOOK"
             send_resolved: true
-            title: '[{{ .Status | toUpper }}] Phoenix K3s Alert: {{ .CommonLabels.alertname }}'
-            message: '{{ range .Alerts }}*Summary:* {{ .Annotations.summary }}\n*Description:* {{ .Annotations.description }}\n{{ end }}'
+            title: '[{{ .CommonLabels.sev | default (.Status | toUpper) }}] {{ .CommonLabels.alertname }}'
+            message: '{{ range .Alerts }}[{{ .Labels.sev | default "SEV-1" }}] {{ .Labels.alertname }} — {{ .Annotations.summary }} — runbook: {{ .Annotations.runbook_url | default "https://github.com/arifraza128/K3s_Production_stack/blob/main/docs/runbook.md" }} — since {{ .StartsAt.Format "2006-01-02T15:04:05Z07:00" }}{{ "\n" }}{{ end }}'
       - name: "healthchecks-heartbeat"
         webhook_configs:
           - url: "https://hc-ping.com/REPLACE_WITH_HEALTHCHECKS_UUID"
             send_resolved: false
-

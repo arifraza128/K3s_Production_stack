@@ -5,20 +5,58 @@ metadata:
   namespace: monitoring
   labels:
     grafana_dashboard: "1"
+    app.kubernetes.io/part-of: phoenix-platform
 data:
   phoenix-platform-slos.json: |-
     {
-      "title": "Phoenix Platform — 3 SLOs & K3s Health",
+      "title": "Phoenix Platform — 3 SLOs, Traffic, Health & Reliability",
+      "description": "4-Row SLO & Reliability Dashboard per DESIGN.md §5. If panels show 'No data', verify ServiceMonitor default/test-api in docs/runbook.md#scrape-target-troubleshooting.",
       "uid": "phoenix-platform-slos",
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
       "refresh": "10s",
+      "time": { "from": "now-30m", "to": "now" },
+      "annotations": {
+        "list": [
+          {
+            "name": "Chaos & Alert Events",
+            "datasource": "Prometheus",
+            "enable": true,
+            "expr": "ALERTS{alertstate=\"firing\",service=\"test-api\"}",
+            "iconColor": "red",
+            "titleFormat": "Alert: {{ alertname }}"
+          }
+        ]
+      },
       "panels": [
         {
+          "id": 100,
+          "type": "row",
+          "title": "Row 1 — SLO Status (Availability >= 99.5%, Latency p95 < 300ms, Error Budget)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "collapsed": false
+        },
+        {
           "id": 1,
-          "title": "SLO 1: Test API Availability (Target >= 99.5%)",
+          "title": "SLO 1: Availability (Target >= 99.5% — Healthy / Degraded / Burn)",
+          "description": "Non-5xx requests / total requests over 5m. Empty state troubleshooting: verify `kubectl get servicemonitor -n monitoring test-api`.",
           "type": "stat",
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 1 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 2,
+              "noValue": "No data (check ServiceMonitor test-api)",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 99.0 },
+                  { "color": "green", "value": 99.5 }
+                ]
+              }
+            }
+          },
           "targets": [
             {
               "expr": "test_api:availability:ratio_rate5m * 100",
@@ -28,28 +66,207 @@ data:
         },
         {
           "id": 2,
-          "title": "SLO 2: Test API P99 Latency (Target < 300ms)",
-          "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+          "title": "SLO 2: Latency p95 (Target < 300 ms — OK <250ms / Warn 250-300ms / Breach >300ms)",
+          "description": "95th percentile request duration on test-api over 5m. Empty state: send traffic to /work or check scrape target.",
+          "type": "stat",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 1 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "decimals": 1,
+              "noValue": "No data (send requests to /work)",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 250 },
+                  { "color": "red", "value": 300 }
+                ]
+              }
+            }
+          },
           "targets": [
             {
-              "expr": "test_api:latency_p99:seconds_rate5m * 1000",
-              "legendFormat": "P99 Latency (ms)"
+              "expr": "test_api:latency_p95:seconds_rate5m * 1000",
+              "legendFormat": "p95 Latency (ms)"
             }
           ]
         },
         {
           "id": 3,
-          "title": "SLO 3: HTTP Requests by Status Code (2xx vs 5xx)",
-          "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+          "title": "SLO 3: 30d Error Budget Remaining (%)",
+          "description": "Remaining 99.5% error budget window. 100% = untouched, 0% = exhausted.",
+          "type": "gauge",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "noValue": "No data (check recording rules)",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 25 },
+                  { "color": "green", "value": 50 }
+                ]
+              }
+            }
+          },
           "targets": [
             {
-              "expr": "sum by (status) (rate(http_requests_total{service=\"test-api\"}[1m]))",
+              "expr": "test_api:error_budget:remaining_ratio * 100",
+              "legendFormat": "Error Budget %"
+            }
+          ]
+        },
+        {
+          "id": 200,
+          "type": "row",
+          "title": "Row 2 — Traffic & Errors (RPS & 5xx Error Rate)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+          "collapsed": false
+        },
+        {
+          "id": 4,
+          "title": "Request Rate (RPS) by Path",
+          "description": "Requests per second across /work, /healthz, /readyz, /fail, /slow.",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (path) (rate(http_requests_total[1m]))",
+              "legendFormat": "{{ path }}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "HTTP 5xx Error Rate vs 2xx Success Rate (req/s)",
+          "description": "Spikes in HTTP 500 trigger TestApiHigh5xxErrorRate -> Discord.",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(http_requests_total[1m]))",
               "legendFormat": "HTTP {{ status }}"
+            }
+          ]
+        },
+        {
+          "id": 300,
+          "type": "row",
+          "title": "Row 3 — Platform Health (Pod Restarts, Node CPU/Memory, Active Alerts)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+          "collapsed": false
+        },
+        {
+          "id": 6,
+          "title": "Container Restarts (Last 1h)",
+          "description": "Tracks pod self-healing during OOM-kill / pod-kill / crash chaos experiments.",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 18 },
+          "targets": [
+            {
+              "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[1h])) > 0",
+              "legendFormat": "{{ namespace }}/{{ pod }}"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "K3s Node Memory & CPU Utilization (%)",
+          "description": "Monitors t4g.medium (4 GB RAM) resource budget per ARCHITECTURE.md §12.",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 18 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100
+            }
+          },
+          "targets": [
+            {
+              "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+              "legendFormat": "Memory Used %"
+            },
+            {
+              "expr": "(1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[2m]))) * 100",
+              "legendFormat": "CPU Used %"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "Active Firing Alerts by Severity",
+          "description": "Counts currently firing Prometheus alerts (excluding DeadMansSwitchHeartbeat).",
+          "type": "stat",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 18 },
+          "targets": [
+            {
+              "expr": "count(ALERTS{alertstate=\"firing\",alertname!=\"DeadMansSwitchHeartbeat\"}) or vector(0)",
+              "legendFormat": "Firing Alerts"
+            }
+          ]
+        },
+        {
+          "id": 400,
+          "type": "row",
+          "title": "Row 4 — Reliability & Backups (Backup Age, Job Status & Dead-Man's-Switch Heartbeat)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+          "collapsed": false
+        },
+        {
+          "id": 9,
+          "title": "Seconds Since Last Successful Backup / Heartbeat Job",
+          "description": "Time elapsed since last successful CronJob completion in backup/monitoring namespaces.",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 26 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No job completion recorded yet",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 21600 },
+                  { "color": "red", "value": 86400 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "time() - max(kube_job_status_completion_time{namespace=~\"backup|monitoring\"})",
+              "legendFormat": "Age (s)"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "External Dead-Man's-Switch Heartbeat Signal (1 = Active)",
+          "description": "DeadMansSwitchHeartbeat vector(1) routed to Healthchecks.io.",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 26 },
+          "targets": [
+            {
+              "expr": "ALERTS{alertname=\"DeadMansSwitchHeartbeat\",alertstate=\"firing\"}",
+              "legendFormat": "Heartbeat Active"
             }
           ]
         }
       ]
     }
-

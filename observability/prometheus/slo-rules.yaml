@@ -5,53 +5,104 @@ metadata:
   namespace: monitoring
   labels:
     release: kube-prometheus-stack
+    app.kubernetes.io/part-of: phoenix-platform
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   groups:
     - name: phoenix.slo.recording
       interval: 15s
       rules:
-        # SLO 1: Availability ratio (non-5xx / total requests over 5m)
+        # SLO 1 (Short window 5m): Availability ratio (non-5xx / total requests over 5m)
         - record: test_api:availability:ratio_rate5m
           expr: |
             1 - (
-              sum(rate(http_requests_total{service="test-api",status=~"5.."}[5m]))
-              /
-              clamp_min(sum(rate(http_requests_total{service="test-api"}[5m])), 0.0001)
+              sum(rate(http_requests_total{status=~"5.."}[5m])) or vector(0)
             )
-        # SLO 2: P99 Latency in seconds over 5m
+            /
+            clamp_min(sum(rate(http_requests_total[5m])), 0.0001)
+
+        # SLO 1 (Long window 30m): Availability ratio over 30m for multi-window burn rate
+        - record: test_api:availability:ratio_rate30m
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{status=~"5.."}[30m])) or vector(0)
+            )
+            /
+            clamp_min(sum(rate(http_requests_total[30m])), 0.0001)
+
+        # SLO 1 Error Budget Remaining (target = 99.5%, allowed error = 0.005)
+        - record: test_api:error_budget:remaining_ratio
+          expr: |
+            clamp_max(
+              clamp_min(
+                1 - ((1 - test_api:availability:ratio_rate30m) / 0.005),
+                0
+              ),
+              1
+            )
+
+        # SLO 2: P95 Latency in seconds over 5m (Target < 0.300s per API.md §2 & DESIGN.md §5)
+        - record: test_api:latency_p95:seconds_rate5m
+          expr: |
+            histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+
+        # Additional telemetry: P99 Latency in seconds over 5m
         - record: test_api:latency_p99:seconds_rate5m
           expr: |
-            histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service="test-api"}[5m])) by (le))
+            histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
 
     - name: phoenix.slo.alerts
       rules:
-        # Alert 1: Triggered when /fail produces 5xx errors breaching the 99.5% Availability SLO
+        # Alert 1: Multi-window SLO burn rate OR synthetic /fail 5xx breach (Target >= 99.5%)
         - alert: TestApiHigh5xxErrorRate
           expr: |
-            sum(increase(http_requests_total{service="test-api",status=~"5.."}[2m])) > 0
-            or test_api:availability:ratio_rate5m < 0.995
+            (
+              (1 - test_api:availability:ratio_rate5m) > (14.4 * 0.005)
+              and
+              (1 - test_api:availability:ratio_rate30m) > (14.4 * 0.005)
+            )
+            or sum(increase(http_requests_total{status=~"5.."}[2m])) > 0
           for: 15s
           labels:
             severity: critical
+            sev: SEV-1
             service: test-api
             slo: availability
           annotations:
-            summary: "test-api 5xx SLO Burn Detected"
-            description: "test-api availability dropped below 99.5% (or synthetic /fail 500 error triggered)."
+            summary: "test-api 5xx error burn exceeds 99.5% Availability SLO"
+            description: "[SEV-1] TestApiHigh5xxErrorRate — test-api availability dropped below 99.5% SLO (or /fail triggered) — runbook: https://github.com/arifraza128/K3s_Production_stack/blob/main/docs/runbook.md#testapihigh5xxerrorrate"
+            runbook_url: "https://github.com/arifraza128/K3s_Production_stack/blob/main/docs/runbook.md#testapihigh5xxerrorrate"
 
-        # Alert 2: Triggered when P99 latency exceeds 300ms
-        - alert: TestApiHighLatencyP99
-          expr: test_api:latency_p99:seconds_rate5m > 0.300
+        # Alert 2: Triggered when P95 latency exceeds 300ms (API.md §2)
+        - alert: TestApiHighLatencyP95
+          expr: test_api:latency_p95:seconds_rate5m > 0.300
           for: 1m
           labels:
             severity: warning
+            sev: SEV-2
             service: test-api
             slo: latency
           annotations:
-            summary: "test-api P99 Latency > 300ms"
-            description: "test-api P99 request latency is {{ $value }}s (threshold: 0.300s)."
+            summary: "test-api P95 latency > 300ms SLO threshold"
+            description: "[SEV-2] TestApiHighLatencyP95 — test-api P95 latency is {{ $value | humanizeDuration }} (SLO < 300ms) — runbook: https://github.com/arifraza128/K3s_Production_stack/blob/main/docs/runbook.md#testapihighlatencyp95"
+            runbook_url: "https://github.com/arifraza128/K3s_Production_stack/blob/main/docs/runbook.md#testapihighlatencyp95"
 
-        # SLO 3: Always-firing DeadManSwitch heartbeat routed to Healthchecks.io
+        # Alert 3: Backup Job Failed (PRD.md §10)
+        - alert: PhoenixBackupJobFailed
+          expr: kube_job_status_failed{namespace="backup"} > 0
+          for: 1m
+          labels:
+            severity: critical
+            sev: SEV-1
+            service: backup
+            slo: recoverability
+          annotations:
+            summary: "Backup CronJob failed in namespace backup"
+            description: "[SEV-1] PhoenixBackupJobFailed — pg_dump or Velero backup job failed — runbook: https://github.com/arifraza128/K3s_Production_stack/blob/main/docs/runbook.md#phoenixbackupjobfailed"
+            runbook_url: "https://github.com/arifraza128/K3s_Production_stack/blob/main/docs/runbook.md#phoenixbackupjobfailed"
+
+        # Dead-Man's-Switch Heartbeat routed to Healthchecks.io
         - alert: DeadMansSwitchHeartbeat
           expr: vector(1)
           labels:
@@ -60,4 +111,3 @@ spec:
           annotations:
             summary: "Phoenix Platform Monitoring Heartbeat"
             description: "Continuous heartbeat signal to external Healthchecks.io monitor."
-
