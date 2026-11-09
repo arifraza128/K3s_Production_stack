@@ -112,3 +112,4 @@ resource "aws_eip_association" "phoenix_eip_assoc" {
 output "instance_id" {
   value = aws_instance.phoenix_k3s.id
 }
+

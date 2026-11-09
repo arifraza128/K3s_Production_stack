@@ -164,3 +164,4 @@ Public internet -> 80/443 only -> ingress-nginx -> services. NetworkPolicies def
 ## 14. MVP vs Future
 
 **Future:** Loki, Chaos Mesh CRDs, Pushgateway restore automation, k6 load tests, multi-node, B2 secondary backup, Argo Rollouts.
+

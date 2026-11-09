@@ -13,7 +13,9 @@ override.tf.json
 .terraform.rc
 terraform.rc
 
-# OS & Editor
+# OS, Python & Editor
+__pycache__/
+*.py[cod]
 .DS_Store
 Thumbs.db
 .vscode/

@@ -82,3 +82,4 @@ Prefer standard library / existing tools. Every new tool or chart needs: reason,
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `ci:`, `infra:`).
 - One logical change per commit/PR. No force-push to `main`.
 - Final report per task: files changed, commands run, results, open risks, items needing approval.
+

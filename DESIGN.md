@@ -73,3 +73,4 @@ Alt text on screenshots; don't rely on color alone in dashboards; readable headi
 ## 9. States
 
 Empty dashboard -> panel description explains scrape target; failed experiments are published with FAIL label and a fix follow-up.
+

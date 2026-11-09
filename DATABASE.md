@@ -84,3 +84,4 @@ Gitea runs its own migrations. Seed: one demo org/repo created by a documented s
 
 - Never run restore over a live DB without a fresh dump first.
 - Never test restore against production data store directly — use a throwaway.
+

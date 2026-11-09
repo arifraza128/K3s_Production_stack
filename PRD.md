@@ -150,3 +150,4 @@ GitHub (+Actions, GHCR), AWS (EC2, S3, IAM, Budgets), Discord webhook, Healthche
 | **A4** | Region `ap-south-1`. | Assumed |
 | **A5** | Public repo; no real personal data anywhere. | Assumed |
 | **A6** | Run the instance only during build/drill sessions to control cost. | Assumed |
+

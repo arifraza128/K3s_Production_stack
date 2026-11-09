@@ -171,3 +171,4 @@ output "instance_profile_name" {
 output "backup_bucket_name" {
   value = aws_s3_bucket.phoenix_backups.bucket
 }
+

@@ -87,3 +87,4 @@ Alertmanager payload -> Discord. No inbound public webhooks in MVP (smaller atta
 ## 7. Privacy & Logging
 
 Never log tokens/webhook URLs. Request logs: method, path, status, duration, `request_id` only.
+
