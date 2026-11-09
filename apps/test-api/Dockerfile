@@ -1,7 +1,12 @@
-FROM python:3.12-alpine3.20
+FROM python:3.12-alpine3.21
 
-# Create non-root group and user (UID 10001)
-RUN addgroup -g 10001 -S appgroup && \
+# Upgrade all Alpine OS packages and remove unused package managers (pip/setuptools/wheel)
+# to eliminate OS & Python packaging CVEs flagged by Trivy HIGH/CRITICAL gate
+RUN apk update && \
+    apk upgrade --no-cache && \
+    pip uninstall -y pip setuptools wheel || true && \
+    rm -rf /root/.cache /var/cache/apk/* && \
+    addgroup -g 10001 -S appgroup && \
     adduser -u 10001 -S appuser -G appgroup
 
 WORKDIR /app
@@ -15,4 +20,3 @@ EXPOSE 8080
 USER 10001:10001
 
 ENTRYPOINT ["python3", "/app/app.py"]
-

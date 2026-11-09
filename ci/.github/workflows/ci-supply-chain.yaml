@@ -13,7 +13,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/test-api
+  IMAGE_NAME: arifraza128/k3s_production_stack/test-api
 
 permissions:
   contents: read
@@ -29,6 +29,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Run Test API unit tests
+        run: python3 -m unittest discover -s apps/test-api -v
+
       - name: Set up QEMU (for ARM64 K3s Graviton support)
         uses: docker/setup-qemu-action@v3
 
@@ -43,13 +46,13 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Run Trivy vulnerability scanner (Fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@0.30.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: "table"
           exit-code: "1"
           ignore-unfixed: true
-          vuln-type: "os,library"
+          scanners: "vuln"
           severity: "HIGH,CRITICAL"
 
       - name: Generate CycloneDX SBOM with Syft
@@ -89,5 +92,4 @@ jobs:
           COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign sign --yes "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}"
-          cosign attach sbom --sbom sbom-test-api.cdx.json "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}"
-
+          cosign attach sbom --sbom sbom-test-api.cdx.json --type cyclonedx "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}"
