@@ -2,10 +2,11 @@
 # ==============================================================================
 # Phoenix Platform — Phase 5 End-to-End Execution & Verification Script
 # Runs Phase 5 from start to finish:
-#   1. Ensures kube-prometheus-stack (v65.1.1) is installed and Ready in monitoring
+#   1. Reconciles kube-prometheus-stack (v65.1.1) via ArgoCD (or Helm fallback)
 #   2. Applies observability/ kustomization (ServiceMonitor, 3 SLO rules,
 #      4-Row Grafana Dashboard ConfigMap, Heartbeat CronJob, NetworkPolicy)
-#   3. Configures Discord / Healthchecks webhooks if exported in environment
+#   3. Configures Discord / Healthchecks webhooks in Secret monitoring-webhooks
+#      and Alertmanager configuration secret
 #   4. Generates baseline /work traffic on test-api & verifies SLO recording rules
 #   5. Test 1: Forces HTTP 500 via /fail -> verifies TestApiHigh5xxErrorRate fires
 #      (and sends formatted [SEV-1] notification to Discord if DISCORD_WEBHOOK_URL set)
@@ -33,54 +34,65 @@ if [[ "${HEALTHCHECKS_URL:-}" == *"YOUR_UUID"* ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Step 1: Check K3s Cluster Connectivity & Install/Verify kube-prometheus-stack
+# Step 1: Check K3s Cluster Connectivity & Reconcile kube-prometheus-stack
 # ------------------------------------------------------------------------------
 echo ""
-echo "[Step 1/7] Checking K3s cluster and kube-prometheus-stack in namespace 'monitoring'..."
+echo "[Step 1/7] Checking K3s cluster and reconciling kube-prometheus-stack in namespace 'monitoring'..."
 kubectl cluster-info
 
-HELM_VALUES_FILE="$(mktemp)"
-cp "${REPO_ROOT}/observability/prometheus/values.yaml" "${HELM_VALUES_FILE}"
-if [[ -n "${DISCORD_WEBHOOK_URL:-}" ]]; then
-  sed -i "s|https://discord.com/api/webhooks/REPLACE_WITH_DISCORD_WEBHOOK|${DISCORD_WEBHOOK_URL}|g" "${HELM_VALUES_FILE}"
-fi
-if [[ -n "${HEALTHCHECKS_URL:-}" ]]; then
-  sed -i "s|https://hc-ping.com/REPLACE_WITH_HEALTHCHECKS_UUID|${HEALTHCHECKS_URL}|g" "${HELM_VALUES_FILE}"
-fi
+# Clean up any leftover webhook configurations that could block Prometheus CR creation
+kubectl delete mutatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete validatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
 
-if ! kubectl get statefulset -n monitoring prometheus-kube-prometheus-stack-prometheus >/dev/null 2>&1; then
-  echo "  -> Installing kube-prometheus-stack v65.1.1 via Helm..."
+if kubectl get crd applications.argoproj.io >/dev/null 2>&1 && kubectl get namespace argocd >/dev/null 2>&1; then
+  echo "  -> ArgoCD detected! Applying GitOps Application 02a-kube-prometheus-stack.yaml..."
+  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02a-kube-prometheus-stack.yaml"
+  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02-observability.yaml"
+  kubectl annotate application kube-prometheus-stack -n argocd argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
+else
+  echo "  -> ArgoCD not detected; installing kube-prometheus-stack v65.1.1 via Helm..."
+  kubectl delete service kube-prometheus-stack-coredns -n kube-system --ignore-not-found >/dev/null 2>&1 || true
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
   helm repo update
   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
     --namespace monitoring --create-namespace \
     --version 65.1.1 \
-    -f "${HELM_VALUES_FILE}" \
+    -f "${REPO_ROOT}/observability/prometheus/values.yaml" \
     --wait --timeout 420s
-elif [[ -n "${DISCORD_WEBHOOK_URL:-}" || -n "${HEALTHCHECKS_URL:-}" ]]; then
-  echo "  -> Updating kube-prometheus-stack Alertmanager receivers with exported webhooks..."
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1 || true
-  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-    --namespace monitoring \
-    --version 65.1.1 \
-    -f "${HELM_VALUES_FILE}" \
-    --wait --timeout 300s
 fi
-rm -f "${HELM_VALUES_FILE}"
 
-echo "  -> Waiting for Prometheus, Grafana, and Alertmanager pods to be Ready..."
+echo "  -> Waiting for Prometheus Operator & Grafana deployments in 'monitoring' (up to 300s)..."
+for _ in $(seq 1 60); do
+  if kubectl get deployment kube-prometheus-stack-operator -n monitoring >/dev/null 2>&1 && \
+     kubectl get deployment kube-prometheus-stack-grafana -n monitoring >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
+kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
+kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
+
+echo "  -> Waiting for Prometheus Operator to create Prometheus & Alertmanager StatefulSets..."
+for _ in $(seq 1 60); do
+  if kubectl get statefulset prometheus-kube-prometheus-stack-prometheus -n monitoring >/dev/null 2>&1 && \
+     kubectl get statefulset alertmanager-kube-prometheus-stack-alertmanager -n monitoring >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=alertmanager -n monitoring --timeout=300s
 
 # ------------------------------------------------------------------------------
-# Step 2: Apply Phase 5 Observability Manifests
+# Step 2: Apply Phase 5 Observability Manifests & Webhook Secrets
 # ------------------------------------------------------------------------------
 echo ""
 echo "[Step 2/7] Applying Phase 5 observability manifests (ServiceMonitor, SLO Rules, 4-Row Dashboard, Heartbeat, NetworkPolicy)..."
 kubectl apply -k "${REPO_ROOT}/observability" --server-side --force-conflicts
 
-# Wire DISCORD_WEBHOOK_URL / HEALTHCHECKS_URL into monitoring-webhooks Secret (never logged)
 if [[ -n "${DISCORD_WEBHOOK_URL:-}" || -n "${HEALTHCHECKS_URL:-}" ]]; then
   echo "  -> Updating Secret monitoring/monitoring-webhooks from environment variables (redacted)..."
   kubectl create secret generic monitoring-webhooks -n monitoring \

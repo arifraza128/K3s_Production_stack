@@ -26,6 +26,22 @@ spec:
           enabled: false
         kubeProxy:
           enabled: false
+        coreDns:
+          enabled: false
+        kubeDns:
+          enabled: false
+        prometheusOperator:
+          admissionWebhooks:
+            enabled: false
+          tls:
+            enabled: false
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 150m
+              memory: 192Mi
         grafana:
           enabled: true
           adminPassword: "admin-phoenix-stack"
@@ -76,4 +92,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-
+      - RespectIgnoreDifferences=true
