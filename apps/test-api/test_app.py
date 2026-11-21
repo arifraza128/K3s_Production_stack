@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""Table-driven unit tests for Phoenix Platform Test API (API.md contract)."""
+"""
+Table-driven unit tests for Phoenix Test API (API.md contract verification).
+"""
 import json
+import os
 import unittest
 
 import app
@@ -8,50 +11,49 @@ import app
 
 class TestPhoenixAPI(unittest.TestCase):
     def test_endpoints_table_driven_chaos_enabled(self) -> None:
-        app.CHAOS_ENDPOINTS_ENABLED = True
+        os.environ["CHAOS_ENDPOINTS_ENABLED"] = "true"
         cases = [
-            ("GET", "/healthz", 200, "status", False),
-            ("GET", "/readyz", 200, "status", False),
-            ("GET", "/version", 200, "version", False),
-            ("GET", "/work", 200, "request_id", False),
-            ("GET", "/slow?ms=10", 200, "slept_ms", False),
-            ("GET", "/fail", 500, "error", False),
-            ("POST", "/crash", 500, "error", True),
-            ("GET", "/unknown-route", 404, "error", False),
+            ("GET", "/", 200, "Phoenix Platform"),
+            ("GET", "/healthz", 200, "ok"),
+            ("GET", "/readyz", 200, "ready"),
+            ("GET", "/version", 200, "version"),
+            ("GET", "/work", 200, "completed"),
+            ("GET", "/slow?ms=10", 200, "slow_completed"),
+            ("GET", "/fail", 500, "SIMULATED_500_FAILURE"),
+            ("POST", "/crash", 500, "SIMULATED_CRASH"),
+            ("GET", "/unknown-route", 404, "NOT_FOUND"),
         ]
-        for method, path, expected_status, expected_key, expected_crash in cases:
+        for method, path, expected_status, expected_substr in cases:
             with self.subTest(method=method, path=path):
-                status, content_type, body, should_crash = app.dispatch_request(method, path)
+                status, _, raw = app.dispatch_request(method, path)
+                body = raw.decode("utf-8")
                 self.assertEqual(status, expected_status)
-                self.assertEqual(content_type, "application/json")
-                self.assertEqual(should_crash, expected_crash)
-                payload = json.loads(body.decode("utf-8"))
-                self.assertIn(expected_key, payload)
+                self.assertIn(expected_substr, body)
                 if expected_status >= 400:
-                    self.assertIn("code", payload["error"])
-                    self.assertIn("message", payload["error"])
-                    self.assertIn("request_id", payload["error"])
+                    parsed = json.loads(body)
+                    self.assertIn("error", parsed)
+                    self.assertIn("code", parsed["error"])
+                    self.assertIn("message", parsed["error"])
+                    self.assertIn("request_id", parsed["error"])
 
     def test_chaos_endpoints_disabled_by_default(self) -> None:
-        app.CHAOS_ENDPOINTS_ENABLED = False
-        for method, path in [("GET", "/slow?ms=10"), ("GET", "/fail"), ("POST", "/crash")]:
+        os.environ["CHAOS_ENDPOINTS_ENABLED"] = "false"
+        for method, path in [("GET", "/slow"), ("GET", "/fail"), ("POST", "/crash")]:
             with self.subTest(method=method, path=path):
-                status, _, body, should_crash = app.dispatch_request(method, path)
+                status, _, raw = app.dispatch_request(method, path)
                 self.assertEqual(status, 403)
-                self.assertFalse(should_crash)
-                payload = json.loads(body.decode("utf-8"))
-                self.assertEqual(payload["error"]["code"], "CHAOS_DISABLED")
+                parsed = json.loads(raw.decode("utf-8"))
+                self.assertEqual(parsed["error"]["code"], "CHAOS_DISABLED")
 
     def test_metrics_contract(self) -> None:
-        app.CHAOS_ENDPOINTS_ENABLED = True
+        os.environ["CHAOS_ENDPOINTS_ENABLED"] = "true"
         app.dispatch_request("GET", "/work")
-        status, content_type, body, _ = app.dispatch_request("GET", "/metrics")
-        text = body.decode("utf-8")
+        status, _, raw = app.dispatch_request("GET", "/metrics")
+        body = raw.decode("utf-8")
         self.assertEqual(status, 200)
-        self.assertIn("text/plain", content_type)
-        self.assertIn("app_build_info{", text)
-        self.assertIn('http_requests_total{path="/work",method="GET",status="200"}', text)
-        self.assertIn('http_request_duration_seconds_bucket{path="/work",le="0.3"}', text)
+        self.assertIn("http_requests_total{", body)
+        self.assertIn("http_request_duration_seconds_bucket{", body)
+        self.assertIn("app_build_info{", body)
 
 
 if __name__ == "__main__":

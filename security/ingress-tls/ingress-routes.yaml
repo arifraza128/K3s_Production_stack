@@ -8,7 +8,7 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/limit-rps: "10"
     nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
-    # API.md §1 & ARCHITECTURE.md §11: /slow, /fail, /crash are internal only and blocked publicly
+    # API.md §1 & ARCHITECTURE.md §11: /slow, /fail, /crash, /metrics are internal only and blocked publicly
     nginx.ingress.kubernetes.io/server-snippet: |
       location ~ ^/(crash|fail|slow|metrics) {
         return 403 '{"error":{"code":"FORBIDDEN","message":"Internal endpoint not routable via public ingress","request_id":"ingress-deny"}}\n';
@@ -23,6 +23,13 @@ spec:
     - host: 13.207.161.55.sslip.io
       http:
         paths:
+          - path: /
+            pathType: Exact
+            backend:
+              service:
+                name: test-api
+                port:
+                  number: 80
           - path: /healthz
             pathType: Exact
             backend:
@@ -44,3 +51,82 @@ spec:
                 name: test-api
                 port:
                   number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-public-ingress
+  namespace: monitoring
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - grafana.13.207.161.55.sslip.io
+      secretName: grafana-sslip-tls
+  rules:
+    - host: grafana.13.207.161.55.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-grafana
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitea-public-ingress
+  namespace: gitea
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - gitea.13.207.161.55.sslip.io
+      secretName: gitea-sslip-tls
+  rules:
+    - host: gitea.13.207.161.55.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gitea-http
+                port:
+                  number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-public-ingress
+  namespace: argocd
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - argocd.13.207.161.55.sslip.io
+      secretName: argocd-sslip-tls
+  rules:
+    - host: argocd.13.207.161.55.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 443
