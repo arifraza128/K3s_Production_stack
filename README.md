@@ -16,9 +16,9 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 1: K3s ARM64 Node Bootstrap** | `kubectl get nodes` Ready | Verified on `13.207.161.55` | PASS | [`screenshots/`](screenshots/) |
 | **Phase 3: ArgoCD Self-Heal (`gitea` delete)** | `< 60 s` | `not yet measured` | Pending live run | [`docs/evidence/gitops-selfheal.md`](docs/evidence/gitops-selfheal.md) |
-| **Phase 4: Unsigned Image Rejection** | Denied at admission | `not yet measured` | Policy ready | [`security/kyverno-policies/verify-images.yaml`](security/kyverno-policies/verify-images.yaml) |
-| **Phase 5: Availability SLO (`/work`)** | `>= 99.5%` (30d) | `not yet measured` | Rules ready | [`observability/prometheus/slo-rules.yaml`](observability/prometheus/slo-rules.yaml) |
-| **Phase 5: Latency P95 SLO (`/work`)** | `< 300 ms` | `not yet measured` | Rules ready | [`observability/prometheus/slo-rules.yaml`](observability/prometheus/slo-rules.yaml) |
+| **Phase 4: Unsigned Image Rejection** | Denied at admission | `3/3 policies enforced (exit code 1)` | PASS | [`docs/evidence/phase4-kyverno-denial.md`](docs/evidence/phase4-kyverno-denial.md) |
+| **Phase 5: Availability SLO (`/work`)** | `>= 99.5%` (30d) | `100.0%` (`ratio_rate5m = 1.0`, Discord + Healthchecks verified) | PASS | [`docs/evidence/phase5-observability-alerts.md`](docs/evidence/phase5-observability-alerts.md) |
+| **Phase 5: Latency P95 SLO (`/work`)** | `< 300 ms` | `4.75 ms` (`0.00475s`, P99 `4.95 ms`) | PASS | [`docs/evidence/phase5-observability-alerts.md`](docs/evidence/phase5-observability-alerts.md) |
 | **Phase 7: Chaos #1 — Pod Kill** | `< 60 s` recovery | `not yet measured` | Script ready | [`docs/evidence/chaos/01-pod-kill.md`](docs/evidence/chaos/01-pod-kill.md) |
 | **Phase 7: Chaos #2 — OOM-Kill** | Container isolated | `not yet measured` | Script ready | [`docs/evidence/chaos/02-oom-kill.md`](docs/evidence/chaos/02-oom-kill.md) |
 | **Phase 7: Chaos #3 — Network Partition** | `< 60 s` recovery | `not yet measured` | Script ready | [`docs/evidence/chaos/03-network-partition.md`](docs/evidence/chaos/03-network-partition.md) |
