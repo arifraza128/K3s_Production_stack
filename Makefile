@@ -5,7 +5,7 @@
 SHELL := /bin/bash
 TF_DIR := terraform
 
-.PHONY: help init validate plan apply destroy bootstrap-gitops lint chaos dr-drill backup-keys test-api phase4-verify phase5-verify
+.PHONY: help init validate plan apply destroy bootstrap-gitops lint chaos dr-drill backup-keys test-api phase4-verify phase5-verify phase6-verify
 
 help: ## Show available Make targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ phase4-verify: ## Run Phase 4 end-to-end verification (unit tests + Kyverno + Se
 
 phase5-verify: ## Run Phase 5 end-to-end verification (Prometheus + 3 SLOs + 4-Row Grafana + /fail Alert + Heartbeat)
 	bash scripts/verify-phase5.sh
+
+phase6-verify: ## Run Phase 6 end-to-end verification (ingress-nginx + cert-manager TLS + /crash public block)
+	bash scripts/verify-phase6.sh
 
 chaos: ## Run Phase 7 reliability chaos experiments (5 experiments)
 	bash chaos/scripts/chaos.sh

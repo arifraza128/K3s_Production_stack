@@ -19,6 +19,12 @@ spec:
                 - Pod
               namespaces:
                 - default
+      exclude:
+        any:
+          - resources:
+              selector:
+                matchLabels:
+                  acme.cert-manager.io/http01-solver: "true"
       validate:
         message: "CPU and memory resource requests and limits are required for all containers."
         pattern:

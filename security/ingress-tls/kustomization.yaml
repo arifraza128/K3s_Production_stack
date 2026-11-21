@@ -4,4 +4,4 @@ kind: Kustomization
 resources:
   - cluster-issuers.yaml
   - ingress-routes.yaml
-
+  - networkpolicy.yaml
