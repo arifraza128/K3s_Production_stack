@@ -1,15 +1,15 @@
 {
   "date": "2026-11-21",
   "scenario": "full-destroy",
-  "start_ts": "2026-11-21T15:50:03Z",
-  "end_ts": "2026-11-21T15:50:15Z",
+  "start_ts": "2026-11-21T15:58:19Z",
+  "end_ts": "2026-11-21T15:58:32Z",
   "rto_seconds": 11,
-  "rpo_seconds": 1,
+  "rpo_seconds": 2,
   "data_loss": "none",
   "steps": [
-    {"name": "pre-drill-backup-and-key-verify", "seconds": 1, "status": "pass"},
-    {"name": "inject-failure-full-destroy", "seconds": 1, "status": "pass"},
-    {"name": "restore-and-verify", "seconds": 10, "status": "pass"}
+    {"name": "pre-drill-backup-and-key-verify", "seconds": 2, "status": "pass"},
+    {"name": "inject-failure-full-destroy", "seconds": 0, "status": "pass"},
+    {"name": "restore-and-verify", "seconds": 11, "status": "pass"}
   ],
   "result": "PASS",
   "notes": "Drill #1 (full-destroy): Exported Sealed Secrets master key, destroyed workload deployment, restored from GitOps manifests, and verified public HTTPS 200 on https://13.207.161.55.sslip.io/work.",

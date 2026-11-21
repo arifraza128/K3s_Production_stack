@@ -1,15 +1,15 @@
 {
   "date": "2026-11-21",
   "scenario": "db-corruption",
-  "start_ts": "2026-11-21T15:50:17Z",
-  "end_ts": "2026-11-21T15:50:33Z",
-  "rto_seconds": 15,
+  "start_ts": "2026-11-21T15:58:33Z",
+  "end_ts": "2026-11-21T15:58:48Z",
+  "rto_seconds": 14,
   "rpo_seconds": 1,
   "data_loss": "none",
   "steps": [
     {"name": "pre-drill-backup-and-key-verify", "seconds": 1, "status": "pass"},
     {"name": "inject-failure-db-corruption", "seconds": 2, "status": "pass"},
-    {"name": "restore-and-verify", "seconds": 13, "status": "pass"}
+    {"name": "restore-and-verify", "seconds": 12, "status": "pass"}
   ],
   "result": "PASS",
   "notes": "Drill #3 (db-corruption — Post-Fix): Restored Sealed Secrets master key from backup, reconciled backup CronJob and workloads, and verified zero-data-loss recovery on https://13.207.161.55.sslip.io/work.",

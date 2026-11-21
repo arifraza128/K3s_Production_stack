@@ -4,6 +4,6 @@
 
 | Date | Scenario | RTO | RPO | Data loss | Result | Link |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `2026-11-21` | `backup-corruption` | `0s` | `2s` | `restore aborted (corrupted dump / missing key detected by pre-restore integrity gate)` | **FAIL** | [`2026-11-21-backup-corruption.json`](2026-11-21-backup-corruption.json) · [`postmortem.md`](postmortem.md) |
-| `2026-11-21` | `db-corruption` | `15s` | `1s` | `none` | **PASS** | [`2026-11-21-db-corruption.json`](2026-11-21-db-corruption.json) |
-| `2026-11-21` | `full-destroy` | `11s` | `1s` | `none` | **PASS** | [`2026-11-21-full-destroy.json`](2026-11-21-full-destroy.json) |
+| `2026-11-21` | `backup-corruption` | `0s` | `1s` | `restore aborted (corrupted dump / missing key detected by pre-restore integrity gate)` | **FAIL** | [`2026-11-21-backup-corruption.json`](2026-11-21-backup-corruption.json) · [`postmortem.md`](postmortem.md) |
+| `2026-11-21` | `db-corruption` | `14s` | `1s` | `none` | **PASS** | [`2026-11-21-db-corruption.json`](2026-11-21-db-corruption.json) |
+| `2026-11-21` | `full-destroy` | `11s` | `2s` | `none` | **PASS** | [`2026-11-21-full-destroy.json`](2026-11-21-full-destroy.json) |

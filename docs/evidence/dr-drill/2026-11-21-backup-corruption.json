@@ -1,13 +1,13 @@
 {
   "date": "2026-11-21",
   "scenario": "backup-corruption",
-  "start_ts": "2026-11-21T15:50:15Z",
-  "end_ts": "2026-11-21T15:50:17Z",
+  "start_ts": "2026-11-21T15:58:32Z",
+  "end_ts": "2026-11-21T15:58:33Z",
   "rto_seconds": 0,
-  "rpo_seconds": 2,
+  "rpo_seconds": 1,
   "data_loss": "restore aborted (corrupted dump / missing key detected by pre-restore integrity gate)",
   "steps": [
-    {"name": "pre-drill-backup-and-key-verify", "seconds": 2, "status": "pass"},
+    {"name": "pre-drill-backup-and-key-verify", "seconds": 1, "status": "pass"},
     {"name": "inject-failure-backup-corruption", "seconds": 0, "status": "pass"},
     {"name": "restore-and-verify", "seconds": 0, "status": "fail"}
   ],
