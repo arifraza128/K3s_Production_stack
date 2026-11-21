@@ -2,8 +2,8 @@
 # ==============================================================================
 # Phoenix Platform — Phase 5 End-to-End Execution & Verification Script
 # Runs Phase 5 from start to finish:
-#   1. Cleans post-boot evicted/orphaned pods & reconciles kube-prometheus-stack
-#      (v65.1.1) deterministically via server-side apply + ArgoCD Application
+#   1. Breaks any post-boot Kyverno webhook deadlock, cleans stale pods, and
+#      reconciles kube-prometheus-stack (v65.1.1) via Server-Side Apply
 #   2. Applies observability/ kustomization (ServiceMonitor, 3 SLO rules,
 #      4-Row Grafana Dashboard ConfigMap, Heartbeat CronJob, NetworkPolicy)
 #   3. Configures Discord / Healthchecks webhooks in Secret monitoring-webhooks
@@ -35,19 +35,39 @@ if [[ "${HEALTHCHECKS_URL:-}" == *"YOUR_UUID"* ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Step 1: Post-Boot Cleanup & Deterministic Reconciliation of kube-prometheus-stack
+# Step 1: Post-Boot Unblock (Kyverno Webhook Deadlock Recovery) & Prometheus Stack
 # ------------------------------------------------------------------------------
 echo ""
-echo "[Step 1/7] Checking K3s cluster, cleaning post-boot stale pods, and reconciling kube-prometheus-stack..."
+echo "[Step 1/7] Checking K3s cluster, unblocking post-boot Kyverno webhooks, and reconciling kube-prometheus-stack..."
 kubectl cluster-info
 
-# Remove leftover test pods, queued kyverno cleanup jobs, and unused 3-node valkey cluster to free RAM
-kubectl delete pod unsigned-test -n default --ignore-not-found >/dev/null 2>&1 || true
+# If kyverno-svc has no active endpoints after an EC2 reboot, its fail-closed webhook blocks all K8s mutations
+# (including Kyverno's own pod recreation). Delete the stale webhook configs so K8s can schedule pods;
+# kyverno-admission-controller automatically recreates them once Ready.
+KYVERNO_EP="$(kubectl get endpoints kyverno-svc -n kyverno -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)"
+if [[ -z "${KYVERNO_EP}" ]]; then
+  echo "  -> Detected post-boot Kyverno webhook deadlock (no endpoints for kyverno-svc). Clearing stale webhook configs..."
+  kubectl delete mutatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
+fi
+
+# Remove queued kyverno cleanup cronjobs/jobs, unused 3-node valkey cluster, and failed pods to free RAM on node
+kubectl delete cronjob --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete job --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
+kubectl scale deployment kyverno-cleanup-controller kyverno-reports-controller -n kyverno --replicas=0 >/dev/null 2>&1 || true
+kubectl delete pod unsigned-test -n default --ignore-not-found >/dev/null 2>&1 || true
 kubectl scale statefulset gitea-valkey-cluster -n gitea --replicas=0 >/dev/null 2>&1 || true
+kubectl delete pvc -n gitea -l app.kubernetes.io/name=valkey-cluster --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete pod -A --field-selector=status.phase=Failed --ignore-not-found >/dev/null 2>&1 || true
 
-# Clean up any leftover webhook configurations that block Prometheus CR creation when admissionWebhooks=false
+# Ensure Kyverno admission controller recovers so kyverno-svc endpoints are healthy
+if kubectl get deployment kyverno-admission-controller -n kyverno >/dev/null 2>&1; then
+  echo "  -> Ensuring kyverno-admission-controller is Ready..."
+  kubectl rollout status deployment/kyverno-admission-controller -n kyverno --timeout=180s || \
+    (kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true)
+fi
+
+# Clean up any leftover Prometheus admission webhook configurations
 kubectl delete mutatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete validatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
 
@@ -65,6 +85,12 @@ fi
 echo "  -> Rendering & applying kube-prometheus-stack v65.1.1 via Server-Side Apply (ArgoCD-compatible)..."
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1 || true
 helm repo update prometheus-community >/dev/null 2>&1 || true
+
+# Temporarily clear Kyverno webhooks if kyverno-svc endpoint dropped during heavy apply
+if [[ -z "$(kubectl get endpoints kyverno-svc -n kyverno -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)" ]]; then
+  kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
+fi
+
 helm template kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --version 65.1.1 \
