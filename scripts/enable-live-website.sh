@@ -44,12 +44,18 @@ kubectl rollout status deployment/test-api -n default --timeout=120s
 echo ""
 echo "[2/4] Ensuring Gitea (PostgreSQL + Gitea) and ArgoCD UI are Running..."
 kubectl scale deployment argocd-server argocd-repo-server -n argocd --replicas=1 >/dev/null 2>&1 || true
+kubectl delete pod -n argocd --field-selector=status.phase!=Running --ignore-not-found --grace-period=0 --force >/dev/null 2>&1 || true
+ARGOCD_READY="$(kubectl get pod -n argocd -l app.kubernetes.io/name=argocd-server -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
+if [[ "${ARGOCD_READY}" != "True" ]]; then
+  kubectl delete pod -n argocd -l app.kubernetes.io/name=argocd-server --ignore-not-found --grace-period=0 --force >/dev/null 2>&1 || true
+  kubectl delete pod -n argocd -l app.kubernetes.io/name=argocd-repo-server --ignore-not-found --grace-period=0 --force >/dev/null 2>&1 || true
+fi
 PG_READY="$(kubectl get pod gitea-postgresql-0 -n gitea -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
 if [[ "${PG_READY}" != "True" ]]; then
   kubectl delete pod gitea-postgresql-0 -n gitea --grace-period=0 --force >/dev/null 2>&1 || true
 fi
 kubectl rollout status deployment/gitea -n gitea --timeout=120s || true
-kubectl rollout status deployment/argocd-server -n argocd --timeout=120s || true
+kubectl rollout status deployment/argocd-server -n argocd --timeout=180s || true
 
 # 3. Apply all 4 HTTPS Ingresses & Let's Encrypt Certificates
 echo ""
