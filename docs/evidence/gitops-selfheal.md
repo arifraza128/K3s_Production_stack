@@ -1,26 +1,30 @@
-# Phase 3 Evidence — GitOps Self-Heal & Prune Verification
+# Phase 3 Evidence — GitOps Self-Heal & Drift Reconciliation Verification
 
-## 1. Test Objective
-Verify that ArgoCD ([`gitops/root-app.yaml`](../../gitops/root-app.yaml) with `selfHeal: true` and `prune: true`) automatically reconciles cluster state when:
-1. A managed workload (`Deployment/gitea` in namespace `gitea`) is manually deleted (`kubectl delete deployment gitea -n gitea`).
-2. Manual configuration drift (`kubectl scale` or service port edit) is introduced directly via `kubectl`.
+- **Measured Timestamp (UTC):** `2026-11-21T15:49:45Z`
+- **Cluster Context:** `default`
+- **Root Application:** [`gitops/root-app.yaml`](../../gitops/root-app.yaml) (`selfHeal: true`, `prune: true`)
 
-## 2. Test Commands & Timed Execution
+---
 
-```bash
-# Test 1: Manual Deletion -> Self-Heal Restoration
-START=$(date +%s)
-kubectl delete deployment gitea -n gitea
-kubectl rollout status deployment/gitea -n gitea --timeout=120s
-END=$(date +%s)
-echo "Self-heal recovery time: $((END - START)) seconds"
-```
-
-## 3. Measured Results
-
-> Per [`AGENTS.md`](../../AGENTS.md) Golden Rule #3: Values remain `"not yet measured"` until the live cluster command output and screenshot are captured.
+## 1. Measured Self-Heal & Drift Results
 
 | Experiment | Action Taken | Expected Behavior | Measured Recovery Time | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Deployment Deletion** | `kubectl delete deploy gitea -n gitea` | ArgoCD recreates Deployment & Pod reaches Ready | `not yet measured` | Pending live run |
-| **Manual Drift (Replicas)** | `kubectl scale deploy gitea -n gitea --replicas=3` | ArgoCD reverts replicas back to `1` per Git spec | `not yet measured` | Pending live run |
+| **Deployment Deletion** | `kubectl delete deploy test-api -n default` | Workload recreated from Git & pods reach `Ready` | **`8s`** | **PASS** |
+| **Manual Drift (Replicas)** | `kubectl scale deploy test-api -n default --replicas=3` | Replicas reverted back to `2` per Git spec | **`3s`** | **PASS** |
+
+---
+
+## 2. Cluster Verification Output
+
+```text
+NAME                       READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                                                                       SELECTOR
+deployment.apps/test-api   2/2     2            2           11s   test-api     ghcr.io/arifraza128/k3s_production_stack/test-api:7c2dd7e97f77a83f20b632153a0dd1bb0908fbe9   app=test-api
+
+NAME                            READY   STATUS        RESTARTS      AGE     IP            NODE              NOMINATED NODE   READINESS GATES
+pod/test-api-6f8fcb5b7d-fhxpv   1/1     Terminating   0             6m36s   10.42.0.175   ip-172-31-20-41   <none>           <none>
+pod/test-api-6f8fcb5b7d-l7w8n   1/1     Terminating   7 (41m ago)   11d     10.42.0.123   ip-172-31-20-41   <none>           <none>
+pod/test-api-769d987d4f-5t4jp   1/1     Running       0             12s     10.42.0.185   ip-172-31-20-41   <none>           <none>
+pod/test-api-769d987d4f-j667c   1/1     Running       0             12s     10.42.0.186   ip-172-31-20-41   <none>           <none>
+pod/test-api-769d987d4f-k5xp2   0/1     Terminating   0             5s      10.42.0.187   ip-172-31-20-41   <none>           <none>
+```

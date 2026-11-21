@@ -1,22 +1,29 @@
 # Cloud Cost Analysis & Budget Guardrails (`ap-south-1`)
 
-## 1. Monthly Infrastructure Cost Breakdown
+> Per [`PRD.md`](../PRD.md) §12 A1 & A2: We size the compute node at **`t4g.medium` (2 vCPU ARM64 Graviton2, 4 GiB RAM + 4 GiB swap)** so the full stack (K3s + ArgoCD + Gitea + PostgreSQL + Prometheus + Grafana + Alertmanager + Kyverno + cert-manager + ingress-nginx) runs without OOM thrashing, and we stop the instance between build/drill sessions to control cost.
 
-| Resource | Specification | Pricing Model | Monthly Cost (USD) |
-| :--- | :--- | :--- | :--- |
-| **EC2 Compute** | `t4g.small` (2 vCPU ARM64 Graviton2, 2 GiB RAM) | On-Demand (`$0.0152/hr` in `ap-south-1` / Free-Tier eligible) | `$11.10` (`$0.00` under AWS ARM64 Free Tier) |
-| **EBS Root Storage** | `30 GB` `gp3` (3000 IOPS, 125 MB/s) | `$0.08/GB-month` (Free-Tier includes 30 GB) | `$2.40` (`$0.00` under Free Tier) |
-| **Public IPv4 / EIP** | 1 Attached Elastic IP (`13.207.161.55`) | `$0.005/hr` (`~730 hrs/mo`) | `$3.65` |
-| **S3 Backup Bucket** | `< 5 GB` (`Velero` + `pg_dump` + `SealedSecrets`) | `$0.023/GB-month` (`ap-south-1`) | `$0.12` |
-| **Container Registry & CI** | GitHub Actions + GHCR (`ghcr.io`) | Public Repo Free Tier | `$0.00` |
-| **TLS Certificates & DNS** | Let's Encrypt ACME + `sslip.io` | Free | `$0.00` |
-| **Total Estimated Bill** | **Full 24/7 Production Operation** | **With / Without Free Tier** | **`$3.77 / $17.27`** |
+## 1. Monthly Infrastructure Cost Breakdown (`ap-south-1`)
+
+| Resource | Specification | Pricing Model | 24/7 Monthly Cost (USD) | On-Demand Session Cost (`~40 hrs/mo`) |
+| :--- | :--- | :--- | :--- | :--- |
+| **EC2 Compute** | `t4g.medium` (2 vCPU ARM64, 4 GiB RAM) | On-Demand (`$0.0304/hr` in `ap-south-1`) | `$22.19` | **`$1.22`** |
+| **EBS Root Storage** | `30 GB` `gp3` (encrypted, 3000 IOPS) | `$0.08/GB-month` (Free-Tier eligible up to 30 GB) | `$2.40` (`$0.00` Free Tier) | **`$0.00 – $2.40`** |
+| **Public IPv4 / EIP** | 1 Persistent Elastic IP (`13.207.161.55`) | `$0.005/hr` (`~730 hrs/mo`) | `$3.65` | **`$3.65`** |
+| **S3 Backup Bucket** | `< 5 GB` (`Velero` + `pg_dump` + `SealedSecrets`) | `$0.023/GB-month` (`ap-south-1`) | `$0.12` | **`$0.12`** |
+| **CI/CD & Registry** | GitHub Actions + GHCR + Cosign OIDC | Public Repository Free Tier | `$0.00` | **`$0.00`** |
+| **DNS & TLS** | `13.207.161.55.sslip.io` + Let's Encrypt | Free | `$0.00` | **`$0.00`** |
+| **Total Actual/Expected Bill** | **Full Phoenix Production Stack** | **24/7 vs Session-Based (`PRD.md` A6)** | **`$25.96 – $28.36/mo`** | **`$4.99 – $7.39/mo`** |
+
+---
 
 ## 2. Comparison vs Managed AWS EKS
-- **Managed AWS EKS Baseline:** `$73.00` (EKS Control Plane) + `$22.20` (2x `t4g.small` nodes) + `$16.40` (ALB) = **`$111.60/month`**.
-- **Phoenix K3s Stack Savings:** **`~85% – 96%` cost reduction** while preserving GitOps, supply-chain signing, observability SLOs, and automated S3 DR.
+
+- **Managed AWS EKS Baseline:** `$73.00` (EKS Control Plane) + `$44.38` (2x `t4g.medium` nodes) + `$16.40` (ALB) = **`$133.78/month`**.
+- **Phoenix K3s Stack Savings:** **`~79%` reduction (24/7) to `~95%` reduction (session-based)** while delivering GitOps self-healing, Cosign/Kyverno supply-chain verification, 3 SLOs with Discord/Healthchecks alerting, Let's Encrypt HTTPS, 5 measured chaos experiments, and 3 S3 DR drills.
+
+---
 
 ## 3. Cost Guardrails Implemented
-1. **AWS Budgets Alert:** Configured at `$10.00` threshold (`80%` forecasted and `100%` actual) notifying `arif3raza@gmail.com`.
-2. **Ephemeral Compute Destruction:** Running `make destroy` tears down EC2 & EBS when idle while retaining GitOps manifests in Git for `< 2 min` rebuilds.
 
+1. **AWS Budgets Alert ([`terraform/bootstrap/main.tf`](../terraform/bootstrap/main.tf)):** Configured at `$10.00/month` (`80%` threshold notification to `arif3raza@gmail.com`).
+2. **Stop/Destroy Between Sessions ([`PRD.md`](../PRD.md) §12 A6):** Stopping `i-0ffd3360432bbacf3` (`aws ec2 stop-instances`) when not running drills eliminates EC2 hourly compute charges while preserving the EBS volume and Elastic IP `13.207.161.55`.

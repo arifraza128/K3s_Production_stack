@@ -14,9 +14,10 @@
 
 | Pillar / Test | Target | Measured Value | Status | Evidence Link |
 | :--- | :--- | :--- | :--- | :--- |
-| **Phase 1: K3s ARM64 Node Bootstrap** | `kubectl get nodes` Ready | Verified on `13.207.161.55` | PASS | [`screenshots/`](screenshots/) |
-| **Phase 3: ArgoCD Self-Heal (`gitea` delete)** | `< 60 s` | `not yet measured` | Pending live run | [`docs/evidence/gitops-selfheal.md`](docs/evidence/gitops-selfheal.md) |
+| **Phase 1: K3s ARM64 Node Bootstrap** | `kubectl get nodes` Ready | Verified on `13.207.161.55` (`t4g.medium`, `v1.37.2+k3s1`) | PASS | [`screenshots/`](screenshots/) |
+| **Phase 3: ArgoCD Self-Heal & Drift** | `< 60 s` | `8s` (deployment delete) / `3s` (replica drift `3 -> 2`) | PASS | [`docs/evidence/gitops-selfheal.md`](docs/evidence/gitops-selfheal.md) |
 | **Phase 4: Unsigned Image Rejection** | Denied at admission | `3/3 policies enforced (exit code 1)` | PASS | [`docs/evidence/phase4-kyverno-denial.md`](docs/evidence/phase4-kyverno-denial.md) |
+| **Phase 4: Trivy HIGH/CRITICAL CI Gate** | Block vulnerable build | `Blocked run cd8733a (exit 1) -> Fixed in f8b5b99` | PASS | [`docs/evidence/phase4-trivy-ci-fail.md`](docs/evidence/phase4-trivy-ci-fail.md) |
 | **Phase 5: Availability SLO (`/work`)** | `>= 99.5%` (30d) | `100.0%` (`ratio_rate5m = 1.0`, Discord + Healthchecks verified) | PASS | [`docs/evidence/phase5-observability-alerts.md`](docs/evidence/phase5-observability-alerts.md) |
 | **Phase 5: Latency P95 SLO (`/work`)** | `< 300 ms` | `4.75 ms` (`0.00475s`, P99 `4.95 ms`) | PASS | [`docs/evidence/phase5-observability-alerts.md`](docs/evidence/phase5-observability-alerts.md) |
 | **Phase 6: Ingress + Let's Encrypt TLS & `/crash` Lockdown** | Valid TLS + `/crash` `403` | `Let's Encrypt YR1 Ready in 52s`; `/work` `200`, `/crash` `403 FORBIDDEN` | PASS | [`docs/evidence/phase6-ingress-tls.md`](docs/evidence/phase6-ingress-tls.md) |
@@ -25,7 +26,8 @@
 | **Phase 7: Chaos #3 — Network Partition** | `< 60 s` recovery | `1s` (`502` while isolated -> `200` in `1s`) | PASS | [`docs/evidence/chaos/03-network-partition.md`](docs/evidence/chaos/03-network-partition.md) |
 | **Phase 7: Chaos #4 — CPU Stress** | P95 `< 300 ms` | `4s` (Peak latency `123 ms` under 2-worker stress) | PASS | [`docs/evidence/chaos/04-cpu-stress.md`](docs/evidence/chaos/04-cpu-stress.md) |
 | **Phase 7: Chaos #5 — Disk / PVC Pressure** | Node healthy | `6s` (`45 MB` write bounded; `DiskPressure=False`) | PASS | [`docs/evidence/chaos/05-disk-fill.md`](docs/evidence/chaos/05-disk-fill.md) |
-| **Phase 8: Full DR Drill (RTO / RPO)** | Measured in scorecard | `not yet measured` | Script ready | [`docs/evidence/dr-drill/scorecard.md`](docs/evidence/dr-drill/scorecard.md) |
+| **Phase 8: Full DR Drill (RTO / RPO)** | Measured in scorecard | `RTO = 11s–15s`, `RPO = 1s` (`3 drills: 2 PASS, 1 Planned FAIL`) | PASS | [`docs/evidence/dr-drill/scorecard.md`](docs/evidence/dr-drill/scorecard.md) |
+| **Phase 9: Final Security & Portfolio Audit** | Audit Verdict `READY` | `READY (0 secrets, 100% evidence coverage)` | PASS | [`docs/evidence/phase9-final-audit.md`](docs/evidence/phase9-final-audit.md) |
 
 ---
 

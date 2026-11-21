@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-21",
+  "scenario": "backup-corruption",
+  "start_ts": "2026-11-21T15:50:15Z",
+  "end_ts": "2026-11-21T15:50:17Z",
+  "rto_seconds": 0,
+  "rpo_seconds": 2,
+  "data_loss": "restore aborted (corrupted dump / missing key detected by pre-restore integrity gate)",
+  "steps": [
+    {"name": "pre-drill-backup-and-key-verify", "seconds": 2, "status": "pass"},
+    {"name": "inject-failure-backup-corruption", "seconds": 0, "status": "pass"},
+    {"name": "restore-and-verify", "seconds": 0, "status": "fail"}
+  ],
+  "result": "FAIL",
+  "notes": "Drill #2 (backup-corruption — Planned Failure): Verified that pre-restore integrity check rejects corrupted dump / missing key and halts destructive overwrite. Documented in docs/evidence/dr-drill/postmortem.md.",
+  "links": {
+    "logs": "docs/evidence/dr-drill/2026-11-21-backup-corruption.json",
+    "screenshots": ["docs/evidence/dr-drill/postmortem.md"]
+  }
+}
