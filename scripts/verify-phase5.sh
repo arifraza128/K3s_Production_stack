@@ -2,11 +2,12 @@
 # ==============================================================================
 # Phoenix Platform — Phase 5 End-to-End Execution & Verification Script
 # Runs Phase 5 from start to finish:
-#   1. Reconciles kube-prometheus-stack (v65.1.1) via ArgoCD (or Helm fallback)
+#   1. Cleans post-boot evicted/orphaned pods & reconciles kube-prometheus-stack
+#      (v65.1.1) deterministically via server-side apply + ArgoCD Application
 #   2. Applies observability/ kustomization (ServiceMonitor, 3 SLO rules,
 #      4-Row Grafana Dashboard ConfigMap, Heartbeat CronJob, NetworkPolicy)
 #   3. Configures Discord / Healthchecks webhooks in Secret monitoring-webhooks
-#      and Alertmanager configuration secret
+#      and Alertmanager configuration
 #   4. Generates baseline /work traffic on test-api & verifies SLO recording rules
 #   5. Test 1: Forces HTTP 500 via /fail -> verifies TestApiHigh5xxErrorRate fires
 #      (and sends formatted [SEV-1] notification to Discord if DISCORD_WEBHOOK_URL set)
@@ -34,42 +35,48 @@ if [[ "${HEALTHCHECKS_URL:-}" == *"YOUR_UUID"* ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Step 1: Check K3s Cluster Connectivity & Reconcile kube-prometheus-stack
+# Step 1: Post-Boot Cleanup & Deterministic Reconciliation of kube-prometheus-stack
 # ------------------------------------------------------------------------------
 echo ""
-echo "[Step 1/7] Checking K3s cluster and reconciling kube-prometheus-stack in namespace 'monitoring'..."
+echo "[Step 1/7] Checking K3s cluster, cleaning post-boot stale pods, and reconciling kube-prometheus-stack..."
 kubectl cluster-info
 
-# Clean up any leftover webhook configurations that could block Prometheus CR creation
+# Remove leftover test pods, queued kyverno cleanup jobs, and unused 3-node valkey cluster to free RAM
+kubectl delete pod unsigned-test -n default --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete job --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
+kubectl scale statefulset gitea-valkey-cluster -n gitea --replicas=0 >/dev/null 2>&1 || true
+kubectl delete pod -A --field-selector=status.phase=Failed --ignore-not-found >/dev/null 2>&1 || true
+
+# Clean up any leftover webhook configurations that block Prometheus CR creation when admissionWebhooks=false
 kubectl delete mutatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete validatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
 
-if kubectl get crd applications.argoproj.io >/dev/null 2>&1 && kubectl get namespace argocd >/dev/null 2>&1; then
-  echo "  -> ArgoCD detected! Applying GitOps Application 02a-kube-prometheus-stack.yaml..."
-  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02a-kube-prometheus-stack.yaml"
-  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02-observability.yaml"
-  kubectl annotate application kube-prometheus-stack -n argocd argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
-else
-  echo "  -> ArgoCD not detected; installing kube-prometheus-stack v65.1.1 via Helm..."
-  kubectl delete service kube-prometheus-stack-coredns -n kube-system --ignore-not-found >/dev/null 2>&1 || true
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
-  helm repo update
-  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-    --namespace monitoring --create-namespace \
-    --version 65.1.1 \
-    -f "${REPO_ROOT}/observability/prometheus/values.yaml" \
-    --wait --timeout 420s
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+HELM_VALUES_FILE="$(mktemp)"
+cp "${REPO_ROOT}/observability/prometheus/values.yaml" "${HELM_VALUES_FILE}"
+if [[ -n "${DISCORD_WEBHOOK_URL:-}" ]]; then
+  sed -i "s|https://discord.com/api/webhooks/REPLACE_WITH_DISCORD_WEBHOOK|${DISCORD_WEBHOOK_URL}|g" "${HELM_VALUES_FILE}"
+fi
+if [[ -n "${HEALTHCHECKS_URL:-}" ]]; then
+  sed -i "s|https://hc-ping.com/REPLACE_WITH_HEALTHCHECKS_UUID|${HEALTHCHECKS_URL}|g" "${HELM_VALUES_FILE}"
 fi
 
-echo "  -> Waiting for Prometheus Operator & Grafana deployments in 'monitoring' (up to 300s)..."
-for _ in $(seq 1 60); do
-  if kubectl get deployment kube-prometheus-stack-operator -n monitoring >/dev/null 2>&1 && \
-     kubectl get deployment kube-prometheus-stack-grafana -n monitoring >/dev/null 2>&1; then
-    break
-  fi
-  sleep 5
-done
+echo "  -> Rendering & applying kube-prometheus-stack v65.1.1 via Server-Side Apply (ArgoCD-compatible)..."
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1 || true
+helm repo update prometheus-community >/dev/null 2>&1 || true
+helm template kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --version 65.1.1 \
+  -f "${HELM_VALUES_FILE}" | kubectl apply -n monitoring --server-side --force-conflicts -f - >/dev/null
+rm -f "${HELM_VALUES_FILE}"
 
+if kubectl get crd applications.argoproj.io >/dev/null 2>&1 && kubectl get namespace argocd >/dev/null 2>&1; then
+  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02a-kube-prometheus-stack.yaml" >/dev/null 2>&1 || true
+  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02-observability.yaml" >/dev/null 2>&1 || true
+fi
+
+echo "  -> Waiting for Prometheus Operator & Grafana deployments in 'monitoring'..."
 kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
 kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
 
@@ -79,7 +86,7 @@ for _ in $(seq 1 60); do
      kubectl get statefulset alertmanager-kube-prometheus-stack-alertmanager -n monitoring >/dev/null 2>&1; then
     break
   fi
-  sleep 5
+  sleep 3
 done
 
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s

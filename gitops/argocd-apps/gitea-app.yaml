@@ -13,6 +13,10 @@ spec:
       values: |
         postgresql-ha:
           enabled: false
+        valkey-cluster:
+          enabled: false
+        valkey:
+          enabled: false
         postgresql:
           enabled: true
           global:
@@ -24,6 +28,13 @@ spec:
             username: gitea_admin
             password: admin12345
             email: admin@local
+          config:
+            cache:
+              ADAPTER: memory
+            session:
+              PROVIDER: memory
+            queue:
+              TYPE: level
         persistence:
           enabled: true
           size: 5Gi

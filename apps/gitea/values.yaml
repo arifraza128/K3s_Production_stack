@@ -1,6 +1,12 @@
-# Gitea chart enables postgresql-ha by default — disable it
-# and use the simpler non-HA postgresql subchart instead.
+# Gitea chart enables postgresql-ha and valkey-cluster by default — disable them
+# and use the simpler non-HA postgresql subchart + in-memory cache for single-node K3s.
 postgresql-ha:
+  enabled: false
+
+valkey-cluster:
+  enabled: false
+
+valkey:
   enabled: false
 
 postgresql:
@@ -15,6 +21,13 @@ gitea:
     username: gitea_admin
     password: admin12345
     email: admin@local
+  config:
+    cache:
+      ADAPTER: memory
+    session:
+      PROVIDER: memory
+    queue:
+      TYPE: level
 
 persistence:
   enabled: true
