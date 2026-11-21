@@ -40,16 +40,19 @@ echo ""
 echo "[Step 1/7] Checking K3s cluster and verifying Prometheus, Grafana, and Alertmanager in 'monitoring'..."
 kubectl cluster-info
 
-# Apply updated NetworkPolicy first so kubelet host liveness/readiness probes (10.42.0.1 / 172.31.x.x) are never dropped
+# Unconditionally clear stale Kyverno & Prometheus admission webhook configs left over from the 11-day EC2 stop/start
+# (a stale container sandbox on kyverno-admission-controller causes 30s 'Timeout: request did not complete' on Secret creation).
+# Restart kyverno-admission-controller in the background so it recreates fresh webhooks with a clean pod sandbox.
+kubectl delete mutatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete mutatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete validatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete cronjob --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete job --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
+
+# Apply updated NetworkPolicy so kubelet host liveness/readiness probes (10.42.0.1 / 172.31.x.x) are never dropped
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl apply -f "${REPO_ROOT}/observability/networkpolicy.yaml" --server-side --force-conflicts >/dev/null
-
-# If kyverno-svc has no active endpoints after an EC2 reboot, clear stale webhook configs so K8s can schedule pods
-KYVERNO_EP="$(kubectl get endpoints kyverno-svc -n kyverno -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)"
-if [[ -z "${KYVERNO_EP}" ]]; then
-  kubectl delete mutatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
-  kubectl delete validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
-fi
 
 # Only render kube-prometheus-stack if Prometheus or Grafana or Alertmanager is missing
 if ! kubectl get statefulset prometheus-kube-prometheus-stack-prometheus -n monitoring >/dev/null 2>&1 || \
@@ -92,10 +95,11 @@ kubectl apply -k "${REPO_ROOT}/observability" --server-side --force-conflicts
 
 if [[ -n "${DISCORD_WEBHOOK_URL:-}" || -n "${HEALTHCHECKS_URL:-}" ]]; then
   echo "  -> Updating Secret monitoring/monitoring-webhooks from environment variables (redacted)..."
+  kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
   kubectl create secret generic monitoring-webhooks -n monitoring \
     --from-literal=DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}" \
     --from-literal=HEALTHCHECKS_URL="${HEALTHCHECKS_URL:-}" \
-    --dry-run=client -o yaml | kubectl apply -f -
+    --dry-run=client -o yaml | kubectl apply --server-side --force-conflicts -f -
 fi
 
 # Reload Prometheus rules directly via HTTP reload endpoint in case operator is still warming up
