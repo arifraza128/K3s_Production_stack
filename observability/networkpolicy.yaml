@@ -11,16 +11,13 @@ spec:
     - Ingress
     - Egress
   ingress:
+    # Allow intra-cluster namespaces and kubelet host liveness/readiness probes (10.42.0.0/16 & VPC 172.31.0.0/16)
     - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
+        - namespaceSelector: {}
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
   egress:
     # Allow DNS resolution
     - to:
@@ -36,6 +33,10 @@ spec:
     # Allow scraping across cluster namespaces & Kubernetes API
     - to:
         - namespaceSelector: {}
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
     # Allow outbound HTTPS to Discord webhook & Healthchecks.io heartbeat
     - to:
         - ipBlock:
@@ -43,4 +44,3 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-

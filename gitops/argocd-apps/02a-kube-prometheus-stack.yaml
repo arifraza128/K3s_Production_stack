@@ -37,11 +37,11 @@ spec:
             enabled: false
           resources:
             requests:
-              cpu: 20m
+              cpu: 50m
               memory: 64Mi
             limits:
-              cpu: 150m
-              memory: 192Mi
+              cpu: 500m
+              memory: 256Mi
         grafana:
           enabled: true
           adminPassword: "admin-phoenix-stack"

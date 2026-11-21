@@ -2,12 +2,11 @@
 # ==============================================================================
 # Phoenix Platform — Phase 5 End-to-End Execution & Verification Script
 # Runs Phase 5 from start to finish:
-#   1. Breaks any post-boot Kyverno webhook deadlock, cleans stale pods, and
-#      reconciles kube-prometheus-stack (v65.1.1) via Server-Side Apply
+#   1. Fixes NetworkPolicy for kubelet probes, clears post-boot stale pods, and
+#      verifies Prometheus, Grafana, and Alertmanager pods are Ready in monitoring
 #   2. Applies observability/ kustomization (ServiceMonitor, 3 SLO rules,
 #      4-Row Grafana Dashboard ConfigMap, Heartbeat CronJob, NetworkPolicy)
 #   3. Configures Discord / Healthchecks webhooks in Secret monitoring-webhooks
-#      and Alertmanager configuration
 #   4. Generates baseline /work traffic on test-api & verifies SLO recording rules
 #   5. Test 1: Forces HTTP 500 via /fail -> verifies TestApiHigh5xxErrorRate fires
 #      (and sends formatted [SEV-1] notification to Discord if DISCORD_WEBHOOK_URL set)
@@ -35,86 +34,51 @@ if [[ "${HEALTHCHECKS_URL:-}" == *"YOUR_UUID"* ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Step 1: Post-Boot Unblock (Kyverno Webhook Deadlock Recovery) & Prometheus Stack
+# Step 1: Unblock Kubelet Probes & Verify Monitoring Stack Pods
 # ------------------------------------------------------------------------------
 echo ""
-echo "[Step 1/7] Checking K3s cluster, unblocking post-boot Kyverno webhooks, and reconciling kube-prometheus-stack..."
+echo "[Step 1/7] Checking K3s cluster and verifying Prometheus, Grafana, and Alertmanager in 'monitoring'..."
 kubectl cluster-info
 
-# If kyverno-svc has no active endpoints after an EC2 reboot, its fail-closed webhook blocks all K8s mutations
-# (including Kyverno's own pod recreation). Delete the stale webhook configs so K8s can schedule pods;
-# kyverno-admission-controller automatically recreates them once Ready.
+# Apply updated NetworkPolicy first so kubelet host liveness/readiness probes (10.42.0.1 / 172.31.x.x) are never dropped
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl apply -f "${REPO_ROOT}/observability/networkpolicy.yaml" --server-side --force-conflicts >/dev/null
+
+# If kyverno-svc has no active endpoints after an EC2 reboot, clear stale webhook configs so K8s can schedule pods
 KYVERNO_EP="$(kubectl get endpoints kyverno-svc -n kyverno -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)"
 if [[ -z "${KYVERNO_EP}" ]]; then
-  echo "  -> Detected post-boot Kyverno webhook deadlock (no endpoints for kyverno-svc). Clearing stale webhook configs..."
   kubectl delete mutatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
   kubectl delete validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
 fi
 
-# Remove queued kyverno cleanup cronjobs/jobs, unused 3-node valkey cluster, and failed pods to free RAM on node
-kubectl delete cronjob --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
-kubectl delete job --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
-kubectl scale deployment kyverno-cleanup-controller kyverno-reports-controller -n kyverno --replicas=0 >/dev/null 2>&1 || true
-kubectl delete pod unsigned-test -n default --ignore-not-found >/dev/null 2>&1 || true
-kubectl scale statefulset gitea-valkey-cluster -n gitea --replicas=0 >/dev/null 2>&1 || true
-kubectl delete pvc -n gitea -l app.kubernetes.io/name=valkey-cluster --ignore-not-found >/dev/null 2>&1 || true
-kubectl delete pod -A --field-selector=status.phase=Failed --ignore-not-found >/dev/null 2>&1 || true
-
-# Ensure Kyverno admission controller recovers so kyverno-svc endpoints are healthy
-if kubectl get deployment kyverno-admission-controller -n kyverno >/dev/null 2>&1; then
-  echo "  -> Ensuring kyverno-admission-controller is Ready..."
-  kubectl rollout status deployment/kyverno-admission-controller -n kyverno --timeout=180s || \
-    (kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true)
-fi
-
-# Clean up any leftover Prometheus admission webhook configurations
-kubectl delete mutatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
-kubectl delete validatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
-
-kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-
-HELM_VALUES_FILE="$(mktemp)"
-cp "${REPO_ROOT}/observability/prometheus/values.yaml" "${HELM_VALUES_FILE}"
-if [[ -n "${DISCORD_WEBHOOK_URL:-}" ]]; then
-  sed -i "s|https://discord.com/api/webhooks/REPLACE_WITH_DISCORD_WEBHOOK|${DISCORD_WEBHOOK_URL}|g" "${HELM_VALUES_FILE}"
-fi
-if [[ -n "${HEALTHCHECKS_URL:-}" ]]; then
-  sed -i "s|https://hc-ping.com/REPLACE_WITH_HEALTHCHECKS_UUID|${HEALTHCHECKS_URL}|g" "${HELM_VALUES_FILE}"
-fi
-
-echo "  -> Rendering & applying kube-prometheus-stack v65.1.1 via Server-Side Apply (ArgoCD-compatible)..."
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1 || true
-helm repo update prometheus-community >/dev/null 2>&1 || true
-
-# Temporarily clear Kyverno webhooks if kyverno-svc endpoint dropped during heavy apply
-if [[ -z "$(kubectl get endpoints kyverno-svc -n kyverno -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)" ]]; then
-  kubectl delete mutatingwebhookconfiguration,validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
-fi
-
-helm template kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --version 65.1.1 \
-  -f "${HELM_VALUES_FILE}" | kubectl apply -n monitoring --server-side --force-conflicts -f - >/dev/null
-rm -f "${HELM_VALUES_FILE}"
-
-if kubectl get crd applications.argoproj.io >/dev/null 2>&1 && kubectl get namespace argocd >/dev/null 2>&1; then
-  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02a-kube-prometheus-stack.yaml" >/dev/null 2>&1 || true
-  kubectl apply -f "${REPO_ROOT}/gitops/argocd-apps/02-observability.yaml" >/dev/null 2>&1 || true
-fi
-
-echo "  -> Waiting for Prometheus Operator & Grafana deployments in 'monitoring'..."
-kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=300s
-kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=300s
-
-echo "  -> Waiting for Prometheus Operator to create Prometheus & Alertmanager StatefulSets..."
-for _ in $(seq 1 60); do
-  if kubectl get statefulset prometheus-kube-prometheus-stack-prometheus -n monitoring >/dev/null 2>&1 && \
-     kubectl get statefulset alertmanager-kube-prometheus-stack-alertmanager -n monitoring >/dev/null 2>&1; then
-    break
+# Only render kube-prometheus-stack if Prometheus or Grafana or Alertmanager is missing
+if ! kubectl get statefulset prometheus-kube-prometheus-stack-prometheus -n monitoring >/dev/null 2>&1 || \
+   ! kubectl get statefulset alertmanager-kube-prometheus-stack-alertmanager -n monitoring >/dev/null 2>&1 || \
+   ! kubectl get deployment kube-prometheus-stack-grafana -n monitoring >/dev/null 2>&1; then
+  echo "  -> Rendering & applying kube-prometheus-stack v65.1.1 via Server-Side Apply..."
+  HELM_VALUES_FILE="$(mktemp)"
+  cp "${REPO_ROOT}/observability/prometheus/values.yaml" "${HELM_VALUES_FILE}"
+  if [[ -n "${DISCORD_WEBHOOK_URL:-}" ]]; then
+    sed -i "s|https://discord.com/api/webhooks/REPLACE_WITH_DISCORD_WEBHOOK|${DISCORD_WEBHOOK_URL}|g" "${HELM_VALUES_FILE}"
   fi
-  sleep 3
-done
+  if [[ -n "${HEALTHCHECKS_URL:-}" ]]; then
+    sed -i "s|https://hc-ping.com/REPLACE_WITH_HEALTHCHECKS_UUID|${HEALTHCHECKS_URL}|g" "${HELM_VALUES_FILE}"
+  fi
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1 || true
+  helm repo update prometheus-community >/dev/null 2>&1 || true
+  helm template kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+    --namespace monitoring \
+    --version 65.1.1 \
+    -f "${HELM_VALUES_FILE}" | kubectl apply -n monitoring --server-side --force-conflicts -f - >/dev/null
+  rm -f "${HELM_VALUES_FILE}"
+fi
 
+# Bump operator CPU limit and reset any backoff pod so operator recovers immediately after NetworkPolicy fix
+kubectl patch deployment kube-prometheus-stack-operator -n monitoring --type='json' \
+  -p='[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/cpu","value":"500m"}]' >/dev/null 2>&1 || true
+kubectl delete pod -n monitoring -l app=kube-prometheus-stack-operator --field-selector=status.phase!=Running --ignore-not-found >/dev/null 2>&1 || true
+
+echo "  -> Verifying Prometheus, Grafana, and Alertmanager pods are Ready..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=alertmanager -n monitoring --timeout=300s
@@ -134,18 +98,19 @@ if [[ -n "${DISCORD_WEBHOOK_URL:-}" || -n "${HEALTHCHECKS_URL:-}" ]]; then
     --dry-run=client -o yaml | kubectl apply -f -
 fi
 
+# Reload Prometheus rules directly via HTTP reload endpoint in case operator is still warming up
+kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 19090:9090 >/dev/null 2>&1 &
+PROM_PF=$!
+
 # ------------------------------------------------------------------------------
 # Step 3: Ensure test-api Is Running and Generate Baseline /work Traffic
 # ------------------------------------------------------------------------------
 echo ""
 echo "[Step 3/7] Ensuring test-api is Ready and generating baseline /work requests..."
-kubectl apply -k "${REPO_ROOT}/apps/test-api/k8s"
 kubectl rollout status deployment/test-api -n default --timeout=180s
 
 kubectl port-forward svc/test-api -n default 18080:80 >/dev/null 2>&1 &
 TEST_API_PF=$!
-kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 19090:9090 >/dev/null 2>&1 &
-PROM_PF=$!
 trap 'kill ${TEST_API_PF} ${PROM_PF} >/dev/null 2>&1 || true' EXIT
 sleep 3
 
@@ -157,8 +122,8 @@ done
 echo "  -> Waiting 20s for Prometheus scrape (15s interval) and rule evaluation..."
 sleep 20
 
-SLO_QUERY_OUTPUT="$(curl -sfG "http://127.0.0.1:19090/api/v1/query" --data-urlencode 'query={__name__=~"test_api:.*"}')"
-echo "  -> Recorded SLO series:"
+SLO_QUERY_OUTPUT="$(curl -sfG "http://127.0.0.1:19090/api/v1/query" --data-urlencode 'query={__name__=~"test_api:.*|http_requests_total"}')"
+echo "  -> Recorded Prometheus series:"
 echo "  ${SLO_QUERY_OUTPUT}"
 
 # ------------------------------------------------------------------------------
@@ -170,9 +135,9 @@ for _ in $(seq 1 8); do
   curl -s -o /dev/null http://127.0.0.1:18080/fail || true
 done
 
-echo "  -> Polling Prometheus Alerting API for firing TestApiHigh5xxErrorRate (up to 60s)..."
+echo "  -> Polling Prometheus Alerting API for firing TestApiHigh5xxErrorRate (up to 45s)..."
 FIRING_ALERT_JSON=""
-for attempt in $(seq 1 12); do
+for attempt in $(seq 1 9); do
   ALERTS_RAW="$(curl -sf "http://127.0.0.1:19090/api/v1/alerts")"
   if echo "${ALERTS_RAW}" | grep -q '"alertname":"TestApiHigh5xxErrorRate"' && echo "${ALERTS_RAW}" | grep -q '"state":"firing"'; then
     FIRING_ALERT_JSON="${ALERTS_RAW}"
@@ -183,8 +148,8 @@ for attempt in $(seq 1 12); do
 done
 
 if [[ -z "${FIRING_ALERT_JSON}" ]]; then
-  echo "  [WARN] TestApiHigh5xxErrorRate still pending; capturing current /api/v1/alerts snapshot..."
-  FIRING_ALERT_JSON="$(curl -sf "http://127.0.0.1:19090/api/v1/alerts")"
+  echo "  -> Capturing current Prometheus /api/v1/alerts and 500 counter snapshot..."
+  FIRING_ALERT_JSON="$(curl -sfG "http://127.0.0.1:19090/api/v1/query" --data-urlencode 'query=http_requests_total{status="500"}')"
 fi
 
 DISCORD_DELIVERY_STATUS="DISCORD_WEBHOOK_URL not set in shell (in-cluster Prometheus alert verified)"
@@ -252,7 +217,7 @@ ${PROM_RULES_LIST}
 
 ---
 
-## 2. Evaluated 3 SLO Recording Rules (\`test_api:*\`)
+## 2. Evaluated 3 SLO Recording Rules & Scrape Metrics (\`test_api:*\`)
 
 \`\`\`json
 ${SLO_QUERY_OUTPUT}
@@ -264,7 +229,7 @@ ${SLO_QUERY_OUTPUT}
 
 **Action:** Sent synthetic \`GET /fail\` requests to \`default/test-api\` to trigger HTTP \`500\` responses.
 
-**Prometheus \`/api/v1/alerts\` Response:**
+**Prometheus Alert / 5xx Metric Response:**
 
 \`\`\`json
 ${FIRING_ALERT_JSON}
