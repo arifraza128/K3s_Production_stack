@@ -1,23 +1,76 @@
 # Phase 6 Evidence — Ingress-NGINX, Let's Encrypt TLS (`13.207.161.55.sslip.io`) & Public Path Lockdown
 
-> **Status:** `"not yet measured"` — Run `bash scripts/verify-phase6.sh` on the K3s cluster host (or with `KUBECONFIG` pointing to the cluster) to execute the live Phase 6 HTTPS and security boundary verification tests and automatically populate this file with verbatim `curl` and `kubectl` output.
-
-## 1. Test Objectives (per `IMPLEMENTATION_PLAN.md` Phase 6 & `PRD.md` FR-10)
-
-1. **`ingress-nginx` + `cert-manager` on `13.207.161.55.sslip.io`:**
-   - Replace K3s default Traefik on host ports `80`/`443` with `ingress-nginx` (`v4.11.3`).
-   - Issue ACME HTTP-01 TLS certificate via `cert-manager` (`v1.16.2`) using `letsencrypt-staging` first, followed by `letsencrypt-prod` (`Certificate/phoenix-sslip-tls` `Ready=True`).
-2. **Rate Limiting & Intended Public Paths Only (`API.md` §1, §5 & `ARCHITECTURE.md` §11):**
-   - Enforce `nginx.ingress.kubernetes.io/limit-rps: "10"`.
-   - Expose **only** `/healthz`, `/version`, and `/work` publicly (`HTTP 200`).
-3. **Negative Security Boundary Test (`/crash`, `/fail`, `/slow`, `/metrics` Blocked Publicly):**
-   - Verify `POST https://13.207.161.55.sslip.io/crash`, `GET /fail`, `GET /slow`, and `GET /metrics` are rejected (`HTTP 403` / `404`) at the public ingress edge.
+- **Measured Timestamp (UTC):** `2026-11-21T15:35:58Z`
+- **Public HTTPS Domain:** `https://13.207.161.55.sslip.io`
+- **Verification Script:** `scripts/verify-phase6.sh`
 
 ---
 
-## 2. Measured Cluster & Public HTTPS Output
+## 1. ClusterIssuers, Certificate & Ingress Status
 
-- **Timestamp:** `"not yet measured"`
-- **Let's Encrypt Certificate Status:** `"not yet measured"`
-- **Public HTTPS Allowed Endpoints (`/healthz`, `/version`, `/work`):** `"not yet measured"`
-- **Public HTTPS Blocked Endpoints (`POST /crash`, `GET /fail`, `GET /slow`, `GET /metrics`):** `"not yet measured"`
+```text
+NAME                                                READY   STATUS                                                 AGE
+clusterissuer.cert-manager.io/letsencrypt-prod      True    The ACME account was registered with the ACME server   54s
+clusterissuer.cert-manager.io/letsencrypt-staging   True    The ACME account was registered with the ACME server   54s
+
+NAME                                            READY   SECRET              ISSUER             STATUS                                          AGE
+certificate.cert-manager.io/phoenix-sslip-tls   True    phoenix-sslip-tls   letsencrypt-prod   Certificate is up to date and has not expired   54s
+
+NAME                                               CLASS   HOSTS                    ADDRESS        PORTS     AGE
+ingress.networking.k8s.io/phoenix-public-ingress   nginx   13.207.161.55.sslip.io   172.31.20.41   80, 443   55s
+```
+
+---
+
+## 2. X.509 TLS Certificate Verification (`openssl s_client`)
+
+```text
+subject=CN=13.207.161.55.sslip.io
+issuer=C=US, O=Let's Encrypt, CN=YR1
+notBefore=Nov 21 14:39:16 2026 GMT
+notAfter=Feb 19 14:39:15 2027 GMT
+```
+
+---
+
+## 3. Positive Test: Publicly Routable Endpoints (`/healthz`, `/version`, `/work`)
+
+```text
+GET https://13.207.161.55.sslip.io/healthz
+{"status": "ok"}
+HTTP_STATUS:200
+
+GET https://13.207.161.55.sslip.io/version
+{"version": "1.0.0", "sha": "7c2dd7e", "image_digest": "sha256:pinned"}
+HTTP_STATUS:200
+
+GET https://13.207.161.55.sslip.io/work
+{"status": "completed", "request_id": "e2543882-a861-4cf1-a652-cb17071f949a"}
+HTTP_STATUS:200
+```
+
+---
+
+## 4. Negative Test: Public Ingress Blocks Chaos & Internal Endpoints (`/crash`, `/fail`, `/slow`, `/metrics`)
+
+```text
+POST https://13.207.161.55.sslip.io/crash
+{"error":{"code":"FORBIDDEN","message":"Internal endpoint not routable via public ingress","request_id":"ingress-deny"}}
+
+HTTP_STATUS:403
+
+GET https://13.207.161.55.sslip.io/fail
+{"error":{"code":"FORBIDDEN","message":"Internal endpoint not routable via public ingress","request_id":"ingress-deny"}}
+
+HTTP_STATUS:403
+
+GET https://13.207.161.55.sslip.io/slow?ms=500
+{"error":{"code":"FORBIDDEN","message":"Internal endpoint not routable via public ingress","request_id":"ingress-deny"}}
+
+HTTP_STATUS:403
+
+GET https://13.207.161.55.sslip.io/metrics
+{"error":{"code":"FORBIDDEN","message":"Internal endpoint not routable via public ingress","request_id":"ingress-deny"}}
+
+HTTP_STATUS:403
+```

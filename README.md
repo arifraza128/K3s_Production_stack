@@ -19,6 +19,7 @@
 | **Phase 4: Unsigned Image Rejection** | Denied at admission | `3/3 policies enforced (exit code 1)` | PASS | [`docs/evidence/phase4-kyverno-denial.md`](docs/evidence/phase4-kyverno-denial.md) |
 | **Phase 5: Availability SLO (`/work`)** | `>= 99.5%` (30d) | `100.0%` (`ratio_rate5m = 1.0`, Discord + Healthchecks verified) | PASS | [`docs/evidence/phase5-observability-alerts.md`](docs/evidence/phase5-observability-alerts.md) |
 | **Phase 5: Latency P95 SLO (`/work`)** | `< 300 ms` | `4.75 ms` (`0.00475s`, P99 `4.95 ms`) | PASS | [`docs/evidence/phase5-observability-alerts.md`](docs/evidence/phase5-observability-alerts.md) |
+| **Phase 6: Ingress + Let's Encrypt TLS & `/crash` Lockdown** | Valid TLS + `/crash` `403` | `Let's Encrypt YR1 Ready in 52s`; `/work` `200`, `/crash` `403 FORBIDDEN` | PASS | [`docs/evidence/phase6-ingress-tls.md`](docs/evidence/phase6-ingress-tls.md) |
 | **Phase 7: Chaos #1 — Pod Kill** | `< 60 s` recovery | `not yet measured` | Script ready | [`docs/evidence/chaos/01-pod-kill.md`](docs/evidence/chaos/01-pod-kill.md) |
 | **Phase 7: Chaos #2 — OOM-Kill** | Container isolated | `not yet measured` | Script ready | [`docs/evidence/chaos/02-oom-kill.md`](docs/evidence/chaos/02-oom-kill.md) |
 | **Phase 7: Chaos #3 — Network Partition** | `< 60 s` recovery | `not yet measured` | Script ready | [`docs/evidence/chaos/03-network-partition.md`](docs/evidence/chaos/03-network-partition.md) |
