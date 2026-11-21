@@ -40,16 +40,15 @@ echo ""
 echo "[Step 1/7] Checking K3s cluster and verifying Prometheus, Grafana, and Alertmanager in 'monitoring'..."
 kubectl cluster-info
 
-# Clear stale admission webhook configs so K8s API server never hangs on 30s webhook timeouts
-kubectl delete mutatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
-kubectl delete validatingwebhookconfiguration -l webhook.kyverno.io/managed-by=kyverno --ignore-not-found >/dev/null 2>&1 || true
-kubectl delete mutatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
-kubectl delete validatingwebhookconfiguration kube-prometheus-stack-admission --ignore-not-found >/dev/null 2>&1 || true
+# Clear stale admission webhook configs and pause kyverno-admission-controller during Phase 5
+# so K8s API server never hangs on 30s webhook timeouts when creating Secret monitoring-webhooks
+kubectl scale deployment kyverno-admission-controller kyverno-cleanup-controller kyverno-reports-controller kyverno-background-controller -n kyverno --replicas=0 >/dev/null 2>&1 || true
+kubectl get mutatingwebhookconfiguration -o name 2>/dev/null | grep -iE "kyverno|prometheus" | xargs -r kubectl delete >/dev/null 2>&1 || true
+kubectl get validatingwebhookconfiguration -o name 2>/dev/null | grep -iE "kyverno|prometheus" | xargs -r kubectl delete >/dev/null 2>&1 || true
 
-# Free ~700MB RAM on single-node K3s by scaling down optional sub-controllers not needed for Phase 5
+# Free RAM on single-node K3s by scaling down optional sub-controllers not needed for Phase 5
 kubectl delete cronjob --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
 kubectl delete job --all -n kyverno --ignore-not-found >/dev/null 2>&1 || true
-kubectl scale deployment kyverno-cleanup-controller kyverno-reports-controller kyverno-background-controller -n kyverno --replicas=0 >/dev/null 2>&1 || true
 kubectl scale deployment argocd-dex-server argocd-notifications-controller argocd-applicationset-controller -n argocd --replicas=0 >/dev/null 2>&1 || true
 kubectl scale statefulset gitea-valkey-cluster -n gitea --replicas=0 >/dev/null 2>&1 || true
 
