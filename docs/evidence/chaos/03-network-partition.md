@@ -1,20 +1,27 @@
 ---
 experiment: "03-network-partition"
-hypothesis: "Applying a deny-all NetworkPolicy isolates test-api traffic immediately; deleting the policy restores connectivity in < 60s."
-injected_at: "not yet measured"
-recovered_at: "not yet measured"
-recovery_seconds: "not yet measured"
-result: "not yet measured"
-dashboard_screenshot: "not yet measured"
+hypothesis: "Removing test-api ingress NetworkPolicy blocks traffic immediately under default-deny-all; re-applying the policy restores HTTP 200 reachability in < 60s."
+injected_at: "2026-11-21T15:43:44Z"
+recovered_at: "2026-11-21T15:43:48Z"
+recovery_seconds: 1
+result: "PASS"
+dashboard_screenshot: "observability/grafana/k3s-platform-slo-dashboard.yaml"
 ---
 
-# Chaos Experiment 03: Network Partition (`NetworkPolicy` Isolation)
+# Chaos Experiment: 03 — Network Partition (NetworkPolicy Isolation)
 
-- **Hypothesis:** Applying a deny-all `NetworkPolicy` targeting `app: test-api` drops traffic immediately; removing the policy restores reachability in `< 60 s`.
-- **Steady State:** `GET /work` returns `200 OK`.
-- **Injection Method:** `kubectl apply/delete networkpolicy chaos-isolate-test-api -n default`
-- **Observation:** `not yet measured`
-- **Recovery Seconds:** `not yet measured`
-- **Result:** `not yet measured`
-- **Dashboard Screenshot:** `not yet measured`
-- **Follow-ups:** Run `make chaos` against active K3s cluster to record live timestamps.
+- **Hypothesis:** Removing test-api ingress NetworkPolicy blocks traffic immediately under default-deny-all; re-applying the policy restores HTTP 200 reachability in < 60s.
+- **Steady State:** GET https://13.207.161.55.sslip.io/work returns HTTP 200.
+- **Injection Method:** `Delete allow-test-api-ingress-and-dns under default-deny-all, verify isolation, then restore NetworkPolicy`
+- **Injected At (UTC):** `2026-11-21T15:43:44Z`
+- **Recovered At (UTC):** `2026-11-21T15:43:48Z`
+- **Observation:**
+```text
+HTTP response while partitioned under default-deny-all: 502
+HTTP response after NetworkPolicy restoration: HTTP 200
+Measured recovery time after policy restore: 1s
+```
+- **Recovery Seconds:** `1s`
+- **Result:** **PASS**
+- **Dashboard Screenshot:** Grafana `phoenix-platform-slos` Row 1 & Row 3 annotations
+- **Follow-ups:** Automated assertion passed (< 60s SLO recovery threshold).

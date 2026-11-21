@@ -1,20 +1,27 @@
 ---
 experiment: "02-oom-kill"
-hypothesis: "A container exceeding its 64Mi memory limit is OOMKilled by cgroup v2 without degrading co-located test-api or gitea pods."
-injected_at: "not yet measured"
-recovered_at: "not yet measured"
-recovery_seconds: "not yet measured"
-result: "not yet measured"
-dashboard_screenshot: "not yet measured"
+hypothesis: "A container exceeding its 48Mi memory limit by allocating 200Mi is immediately OOMKilled (exitCode 137) by cgroup v2 without degrading co-located test-api pods."
+injected_at: "2026-11-21T15:43:36Z"
+recovered_at: "2026-11-21T15:43:44Z"
+recovery_seconds: 8
+result: "PASS"
+dashboard_screenshot: "observability/grafana/k3s-platform-slo-dashboard.yaml"
 ---
 
-# Chaos Experiment 02: OOM-Kill Containment
+# Chaos Experiment: 02 — OOM-Kill Containment
 
-- **Hypothesis:** A container attempting to allocate `250Mi` when bounded by a `64Mi` memory limit is terminated with `OOMKilled` (`exitCode: 137`) without degrading node memory or co-located pods.
-- **Steady State:** Node memory healthy; `test-api` pods `Ready`.
-- **Injection Method:** `stress --vm 1 --vm-bytes 250M --vm-hang 1` inside a `64Mi` memory-limited pod.
-- **Observation:** `not yet measured`
-- **Recovery Seconds:** `not yet measured`
-- **Result:** `not yet measured`
-- **Dashboard Screenshot:** `not yet measured`
-- **Follow-ups:** Run `make chaos` against active K3s cluster to record live timestamps.
+- **Hypothesis:** A container exceeding its 48Mi memory limit by allocating 200Mi is immediately OOMKilled (exitCode 137) by cgroup v2 without degrading co-located test-api pods.
+- **Steady State:** Node memory healthy; test-api pods Ready (2/2).
+- **Injection Method:** `python3 -c 'x = bytearray(200 * 1024 * 1024)' inside limits.memory=48Mi pod`
+- **Injected At (UTC):** `2026-11-21T15:43:36Z`
+- **Recovered At (UTC):** `2026-11-21T15:43:44Z`
+- **Observation:**
+```text
+Container Terminated Reason: OOMKilled (Exit Code: 137)
+Co-located test-api public HTTPS status during/after OOM: HTTP 200
+Containment & cleanup time: 8s
+```
+- **Recovery Seconds:** `8s`
+- **Result:** **PASS**
+- **Dashboard Screenshot:** Grafana `phoenix-platform-slos` Row 1 & Row 3 annotations
+- **Follow-ups:** Automated assertion passed (< 60s SLO recovery threshold).
